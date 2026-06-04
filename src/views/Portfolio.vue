@@ -86,7 +86,10 @@ const heroZoom = {
   // without losing the lerp blend. driverVh shortened so first scroll input
   // produces visible motion immediately (no "scroll twice to start").
   smoothing:     0.12,
-  driverVh:      520,
+  // 240 hero budget + ~100 sticky + small reserve. Trimmed from 520 so the
+  // leftover sticky runway after the doors open (which the wheel-lock dwell
+  // does NOT cover) is ~one screen, not ~4 notches, into the summary.
+  driverVh:      360,
   // Pop disabled — set popAmount > 0 to re-enable a landing overshoot.
   popAmount:     0,
   popAt:         0.88,
