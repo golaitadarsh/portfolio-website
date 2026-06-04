@@ -376,21 +376,30 @@ function smoothstep(a: number, b: number, x: number) {
   return t * t * (3 - 2 * t)
 }
 
-function onHeroScroll() {
+// Hero zoom-out + signature consume only the FIRST `heroBudget` of the
+// runway. The remainder is held in reserve so the sticky stays pinned
+// while the door split (wheel-locked) runs after heroProgress hits 1.
+const HERO_BUDGET_VH = 240
+
+// Shared scroll geometry for the sticky hero/door stage. `scrolled` is how
+// far into the pinned runway we are (0 = stage just pinned). `heroBudgetPx`
+// is where hero-zoom completes and the door entry sits.
+function doorGeom() {
   const driver = heroDriverRef.value
-  if (!driver) return
-  const rect = driver.getBoundingClientRect()
   const sticky = heroStickyRef.value
+  if (!driver) return null
+  const rect = driver.getBoundingClientRect()
   const stickyH = sticky?.clientHeight || window.innerHeight
-  // Total scroll runway available while the sticky is pinned.
   const travel = Math.max(1, driver.clientHeight - stickyH)
   const scrolled = Math.min(travel, Math.max(0, -rect.top))
-  // Hero zoom-out + signature consume only the FIRST `heroBudget` of the
-  // runway. The remainder is held in reserve so the sticky stays pinned
-  // while the door split (wheel-locked) runs after heroProgress hits 1.
-  const heroBudgetVh = 240
-  const heroBudgetPx = Math.min(travel, heroBudgetVh * window.innerHeight / 100)
-  heroProgressTarget = Math.min(1, scrolled / Math.max(1, heroBudgetPx))
+  const heroBudgetPx = Math.min(travel, HERO_BUDGET_VH * window.innerHeight / 100)
+  return { scrolled, heroBudgetPx, travel }
+}
+
+function onHeroScroll() {
+  const g = doorGeom()
+  if (!g) return
+  heroProgressTarget = Math.min(1, g.scrolled / Math.max(1, g.heroBudgetPx))
   if (heroRafId === null) {
     heroRafId = requestAnimationFrame(heroLoop)
   }
@@ -420,11 +429,6 @@ function heroLoop() {
 // and close the doors in reverse before releasing back to P2.
 // ────────────────────────────────────────────────────────────────────
 let cachedTopbarH: number | null = null
-function topbarH() {
-  if (cachedTopbarH !== null) return cachedTopbarH
-  cachedTopbarH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topbar-h')) || 0
-  return cachedTopbarH
-}
 function invalidateTopbarH() { cachedTopbarH = null }
 
 function prefersReducedMotion() {
@@ -432,26 +436,48 @@ function prefersReducedMotion() {
     window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
 }
 
+// Tolerance (px of scroll runway) for catching the door entry. A fast wheel
+// flick can jump well past the exact entry offset between two frames, so the
+// engage test is a half-open zone (not a tight ±window) and the scroll is
+// snapped to the exact entry on engage. The sticky stays pinned across the
+// whole reserved runway, so without this anchoring a reverse wheel would slam
+// the doors shut at an arbitrary offset and trap the scroll mid-summary.
+const DOOR_ENTRY_EPS = 24
+
+// Snap the page scroll so the door stage sits exactly at its entry offset.
+// `delta` = how far current scroll is from the entry (positive = below it).
+function snapToDoorEntry(delta: number) {
+  window.scrollTo({ top: window.scrollY - delta, left: 0, behavior: 'auto' })
+}
+
 function maybeEngageDoorLock(wheelDy = 0) {
   // Reduced-motion users keep native scroll — never hijack the wheel.
   if (prefersReducedMotion()) return
-  const sticky = heroStickyRef.value
-  const driver = heroDriverRef.value
-  if (!sticky || !driver) return
-  const stickyRect = sticky.getBoundingClientRect()
-  const tb = topbarH()
-  // ±8px tolerance — HiDPI / fractional-DPR displays can leave the sticky
-  // top a few sub-pixels above/below the topbar on the engage frame.
-  const isPinned = stickyRect.top <= tb + 8 && stickyRect.top >= tb - 8
+  const g = doorGeom()
+  if (!g) return
+  // distToEntry > 0 → scrolled past the door entry (down into the runway);
+  // < 0 → still above it. Door entry is where hero-zoom finishes.
+  const distToEntry = g.scrolled - g.heroBudgetPx
   doorVisibleRef.value = heroProgress >= doorConfig.heroDoneAt * 0.6
-  if (!isPinned || heroProgress < doorConfig.heroDoneAt || doorLocked) return
-  // Direction-aware engage so reverse-scroll re-takes control:
-  //   wheel DOWN (dy > 0)  → engage if doors not yet fully consumed
-  //   wheel UP   (dy < 0)  → engage if doors are at all open OR dwell used
+  if (heroProgress < doorConfig.heroDoneAt || doorLocked) return
+  const doorsClosed = doorAccum <= 0.001 && doorDwell <= 0.001
   const canOpenMore  = doorAccum < doorConfig.wheelTotal || doorDwell < doorConfig.dwellTotal
   const canCloseMore = doorAccum > 0 || doorDwell > 0
-  if (wheelDy > 0 && canOpenMore)  { doorLocked = true; return }
-  if (wheelDy < 0 && canCloseMore) { doorLocked = true }
+  // Forward (wheel down): the moment scroll reaches/passes the entry while the
+  // doors are still shut, grab the lock and snap exactly to the entry — even
+  // if a fast flick overshot — so the split always plays from the top.
+  if (wheelDy > 0 && doorsClosed && canOpenMore && distToEntry >= -DOOR_ENTRY_EPS) {
+    snapToDoorEntry(distToEntry)
+    doorLocked = true
+    return
+  }
+  // Reverse (wheel up): native scroll first carries the user back up toward the
+  // entry; once within range with the doors still open, re-take the lock and
+  // snap to the entry so the close animation is anchored to the door stage.
+  if (wheelDy < 0 && canCloseMore && distToEntry <= DOOR_ENTRY_EPS) {
+    snapToDoorEntry(distToEntry)
+    doorLocked = true
+  }
 }
 
 function onDoorWheel(e: WheelEvent) {
