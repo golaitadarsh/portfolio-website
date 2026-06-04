@@ -146,10 +146,10 @@ const doorConfig = {
   heroDoneAt: 0.985,
   // After doors fully open, hold the lock for an extra dwell so the user
   // can actually see the character before falling into the summary.
-  // Wheel units of "dwell" before releasing for real. Kept short so the
-  // hand-off from the open-doors / character stage into the summary takes
-  // just one more notch rather than several.
-  dwellTotal: 250,
+  // Wheel units of "dwell" before releasing for real. One macOS wheel
+  // notch is ~90–120 delta, so this is ~one notch: open-doors / character
+  // stage releases into the summary on a single further scroll.
+  dwellTotal: 90,
 }
 let doorDwell = 0          // 0 = just opened, dwellTotal = ready to release
 let doorRafId: number | null = null
