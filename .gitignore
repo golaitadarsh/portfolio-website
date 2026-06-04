@@ -14,10 +14,10 @@ dist/
 .agents/
 .claude/
 
-# scratch / demo files
-character.ts
-hero-demo.html
-skills-lock.json
+# scratch / demo files (root only)
+/character.ts
+/hero-demo.html
+/skills-lock.json
 
 # scratch / artifacts
 *.zip
