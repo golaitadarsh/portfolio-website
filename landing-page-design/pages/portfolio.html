@@ -1,0 +1,1624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Adarsh Golait — Portfolio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="shared.css" />
+  <style>
+    /* ============================================================
+       PORTFOLIO (single-page, smooth-scroll)
+       ============================================================ */
+    html { scroll-padding-top: 80px; }
+
+    /* ─── hero placeholder section ─── */
+    #hero {
+      position: relative;
+      height: 100vh;
+      min-height: 640px;
+      padding: 0;
+      border-top: 0;
+      overflow: hidden;
+    }
+    #hero .hero-slot {
+      position: absolute;
+      inset: 0;
+      min-height: 0;
+      border-left: 0;
+      border-right: 0;
+      border-top: 0;
+      border-bottom: 1px solid var(--rule);
+    }
+    #hero .hero-overlay {
+      position: absolute;
+      inset: 0;
+      padding: 0 var(--gutter-x) calc(var(--gutter-y) * 2.6);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      pointer-events: none;
+      z-index: 2;
+    }
+    #hero .tagline-block {
+      display: inline-flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      width: max-content;
+      max-width: min(70vw, 720px);
+      margin-bottom: 0.7rem;
+    }
+    #hero .tagline {
+      white-space: nowrap;
+      font: 700 clamp(0.6rem, 0.76vw, 0.74rem)/1 var(--f-mono);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ink);
+    }
+    #hero .stack-divider {
+      display: block;
+      width: 100%;
+      height: 1px;
+      background: var(--ink);
+    }
+    #hero .hero-name {
+      font: 900 clamp(2.73rem, 6.93vw, 6.3rem)/0.86 var(--f-sans);
+      letter-spacing: -0.055em;
+      text-transform: uppercase;
+      max-width: min(34vw, 520px);
+    }
+    #hero .hero-name .l1 { display: block; color: #0A0A0A; }
+    #hero .hero-name .l2 { display: block; color: #4A4A4F; }
+
+    #hero .scroll-cue {
+      pointer-events: auto;
+      position: absolute;
+      right: var(--gutter-x);
+      bottom: var(--gutter-y);
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.7rem;
+    }
+    #hero .scroll-cue-label {
+      font: 500 0.62rem/1 var(--f-mono);
+      letter-spacing: 0.32em;
+      text-transform: uppercase;
+      color: var(--ink-soft);
+    }
+    #hero .scroll-cue-track {
+      position: relative;
+      width: 1px;
+      height: 56px;
+      background: var(--rule);
+      overflow: hidden;
+    }
+    #hero .scroll-cue-bead {
+      position: absolute;
+      left: -1.5px; top: 0;
+      width: 4px; height: 12px;
+      background: var(--ink);
+      animation: scrollBead 2.2s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+    }
+    @keyframes scrollBead {
+      0%   { transform: translateY(-110%); opacity: 0; }
+      20%  { opacity: 1; }
+      80%  { opacity: 1; }
+      100% { transform: translateY(460%); opacity: 0; }
+    }
+
+    /* ════════════════════════════════════════════════════════════
+       INTRO MESSAGE  — dark editorial transition between hero & body
+       Reference: Lando-Norris style topographic + marquee + signature
+       ════════════════════════════════════════════════════════════ */
+    #intro-message {
+      position: relative;
+      min-height: 100vh;
+      padding: 0;
+      border-top: 0;
+      background: #1A1F12;             /* dark olive — sits between ink and forest */
+      color: #F2F3EC;
+      overflow: hidden;
+      isolation: isolate;
+    }
+    /* Topographic line background — repeating SVG contour pattern */
+    #intro-message::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 600' preserveAspectRatio='none'><g fill='none' stroke='%23DBFE52' stroke-width='0.6' opacity='0.18'><path d='M0,80 C120,30 220,140 320,90 C420,40 520,140 600,90'/><path d='M0,160 C100,200 200,80 320,160 C440,240 520,80 600,160'/><path d='M0,240 C140,200 240,310 360,260 C480,210 540,300 600,260'/><path d='M0,320 C120,280 240,400 360,340 C480,280 560,400 600,340'/><path d='M0,400 C120,440 220,340 340,420 C460,500 540,360 600,420'/><path d='M0,480 C100,440 220,520 340,480 C460,440 540,540 600,480'/><path d='M0,560 C140,520 260,600 380,560 C500,520 560,600 600,560'/><path d='M-40,60 C80,10 200,120 300,70 C400,20 500,120 580,70' opacity='0.6'/><path d='M-40,140 C80,180 200,60 300,140 C400,220 500,60 580,140' opacity='0.6'/></g></svg>");
+      background-size: 1200px 1200px;
+      background-position: center;
+      mix-blend-mode: screen;
+      opacity: 0.6;
+      pointer-events: none;
+      z-index: 0;
+    }
+    /* faint vignette so portrait pops */
+    #intro-message::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 70% 60% at 50% 55%, rgba(0,0,0,0) 0%, rgba(0,0,0,0.45) 100%);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* top chrome */
+    .im-top {
+      position: relative;
+      z-index: 5;
+      padding: clamp(1.25rem, 3vh, 2rem) clamp(1.5rem, 3vw, 2.5rem);
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: start;
+      gap: 1rem;
+    }
+    .im-top .lockup {
+      font: 900 clamp(0.95rem, 1.1vw, 1.05rem)/0.95 var(--f-sans);
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .im-top .lockup .l1 { color: #F2F3EC; }
+    .im-top .lockup .l2 { color: #F2F3EC; opacity: 0.8; }
+    .im-top .lockup .ll { display: block; }
+    .im-top .center {
+      display: flex; flex-direction: column; align-items: center; gap: 0.65rem;
+    }
+    .im-top .center .mark {
+      width: 36px; height: 36px;
+      display: grid; place-items: center;
+      font: 900 1rem/1 var(--f-sans);
+      letter-spacing: -0.02em;
+      color: var(--accent);
+      border: 1.5px solid var(--accent);
+      transform: rotate(-3deg);
+    }
+    .im-top .center .label {
+      font: 500 0.7rem/1 var(--f-mono);
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: rgba(242,243,236,0.78);
+    }
+    .im-top .right {
+      display: flex; justify-content: flex-end;
+    }
+    .im-top .cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.7rem 1.1rem;
+      background: var(--accent);
+      color: var(--accent-ink);
+      font: 800 0.75rem/1 var(--f-sans);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      border-radius: 4px;
+      transition: transform 0.25s ease, filter 0.25s ease;
+    }
+    .im-top .cta:hover { transform: translateY(-2px); filter: brightness(1.05); }
+    .im-top .cta svg { width: 14px; height: 14px; }
+
+    @media (max-width: 720px) {
+      .im-top { grid-template-columns: auto auto auto; }
+      .im-top .center .label { display: none; }
+    }
+
+    /* stage — portrait + signature + marquees */
+    .im-stage {
+      position: relative;
+      z-index: 3;
+      height: calc(100vh - 6rem);
+      min-height: 540px;
+      display: grid;
+      place-items: center;
+    }
+    .im-frame {
+      position: relative;
+      width: clamp(240px, 32vw, 440px);
+      aspect-ratio: 4/5;
+      z-index: 4;
+    }
+    .im-frame .slot {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      background: rgba(35,40,28,0.55);
+      border: 1px dashed rgba(242,243,236,0.32);
+      color: rgba(242,243,236,0.72);
+      filter: grayscale(100%) contrast(0.95);
+    }
+    .im-frame .slot::before {
+      background-image: repeating-linear-gradient(-45deg, transparent 0, transparent 22px, rgba(242,243,236,0.04) 22px, rgba(242,243,236,0.04) 44px);
+    }
+    .im-frame .slot .slot-kind {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(242,243,236,0.35);
+      color: rgba(242,243,236,0.9);
+    }
+    .im-frame .slot .slot-name { color: #F2F3EC; }
+    .im-frame .slot::after { color: rgba(242,243,236,0.35); }
+
+    /* marquee tracks — two rows, scroll opposite directions, BEHIND portrait */
+    .im-marquee {
+      position: absolute;
+      left: 0; right: 0;
+      pointer-events: none;
+      z-index: 2;
+      overflow: hidden;
+      white-space: nowrap;
+      mask-image: linear-gradient(to right, transparent 0%, #000 8%, #000 92%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 8%, #000 92%, transparent 100%);
+    }
+    .im-marquee.row-1 {
+      top: calc(50% - clamp(3.5rem, 6vw, 6rem));
+      transform: translateY(-50%);
+    }
+    .im-marquee.row-2 {
+      top: calc(50% + clamp(3.5rem, 6vw, 6rem));
+      transform: translateY(-50%);
+    }
+    .im-marquee .track {
+      display: inline-flex;
+      gap: clamp(1.5rem, 4vw, 4rem);
+      will-change: transform;
+    }
+    .im-marquee.row-1 .track { animation: marquee-left 38s linear infinite; }
+    .im-marquee.row-2 .track { animation: marquee-right 44s linear infinite; }
+    .im-marquee .word {
+      font: 900 clamp(4rem, 11vw, 11rem)/0.86 var(--f-sans);
+      letter-spacing: -0.05em;
+      text-transform: uppercase;
+      display: inline-block;
+    }
+    .im-marquee.row-1 .word {
+      font-weight: 500;
+      font-style: italic;
+      color: rgba(219,254,82,0.55);    /* lime, dimmed */
+      letter-spacing: -0.02em;
+    }
+    .im-marquee.row-2 .word {
+      color: #F2F3EC;
+    }
+    .im-marquee .word .dot {
+      display: inline-block;
+      width: 0.5em; height: 0.5em;
+      border-radius: 50%;
+      background: currentColor;
+      vertical-align: 0.18em;
+      margin: 0 0.5em;
+      opacity: 0.6;
+    }
+    @keyframes marquee-left  { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+    @keyframes marquee-right { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+    @media (prefers-reduced-motion: reduce) {
+      .im-marquee.row-1 .track, .im-marquee.row-2 .track { animation: none; }
+    }
+
+    /* lime signature overlay — sits on top of portrait, oversized for energy */
+    .im-signature {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      display: grid;
+      place-items: center;
+      pointer-events: none;
+    }
+    .im-signature svg {
+      width: clamp(360px, 56vw, 820px);
+      height: auto;
+      filter: drop-shadow(0 0 18px rgba(219,254,82,0.18));
+    }
+    .im-signature path {
+      stroke: var(--accent);
+      stroke-width: 7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+      stroke-dasharray: 2400;
+      stroke-dashoffset: 2400;
+      animation: sig-draw 2.4s cubic-bezier(0.22, 0.61, 0.36, 1) 0.4s forwards;
+    }
+    @keyframes sig-draw { to { stroke-dashoffset: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .im-signature path { animation: none; stroke-dashoffset: 0; }
+    }
+
+    /* bottom rail — caption + scroll indicator */
+    .im-foot {
+      position: absolute;
+      left: 0; right: 0;
+      bottom: 0;
+      z-index: 5;
+      padding: 0 clamp(1.5rem, 3vw, 2.5rem) clamp(1.25rem, 3vh, 2rem);
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: end;
+      gap: 1rem;
+    }
+    .im-foot .caption {
+      font: 500 0.7rem/1.5 var(--f-mono);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: rgba(242,243,236,0.55);
+      max-width: 26ch;
+    }
+    .im-foot .caption strong { color: #F2F3EC; font-weight: 600; }
+    .im-foot .scroll-down {
+      display: inline-flex; flex-direction: column; align-items: center; gap: 0.6rem;
+      color: rgba(242,243,236,0.78);
+      pointer-events: auto;
+    }
+    .im-foot .scroll-down span {
+      font: 500 0.62rem/1 var(--f-mono);
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+    }
+    .im-foot .scroll-down .arrow {
+      width: 1px; height: 48px;
+      background: rgba(242,243,236,0.35);
+      position: relative;
+      overflow: hidden;
+    }
+    .im-foot .scroll-down .arrow::after {
+      content: '';
+      position: absolute;
+      left: -1.5px; top: 0;
+      width: 4px; height: 14px;
+      background: var(--accent);
+      animation: scrollBead 2.2s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+    }
+    .im-foot .timestamp {
+      justify-self: end;
+      font: 500 0.62rem/1.5 var(--f-mono);
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: rgba(242,243,236,0.5);
+      text-align: right;
+    }
+
+    @media (max-width: 720px) {
+      .im-foot { grid-template-columns: 1fr; gap: 1rem; }
+      .im-foot .caption, .im-foot .timestamp { text-align: left; }
+      .im-foot .scroll-down { align-items: flex-start; }
+    }
+
+    /* ════════════════════════════════════════════════════════════
+       CHARACTER REVEAL  — moving 3D character mounts here
+       Sticky-scroll wrapper so the character "performs" as you scroll.
+       ════════════════════════════════════════════════════════════ */
+    #character-reveal {
+      position: relative;
+      padding: 0;
+      border-top: 0;
+      background: var(--paper);
+      /* tall wrapper drives sticky parallax */
+      height: 220vh;
+    }
+    #character-reveal .cr-sticky {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      min-height: 600px;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr;
+    }
+    #character-reveal .cr-bg {
+      grid-column: 1; grid-row: 1;
+      position: relative;
+      background: linear-gradient(180deg, #1A1F12 0%, #0E1109 100%);
+      overflow: hidden;
+    }
+    #character-reveal .cr-bg::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse 50% 50% at 50% 60%, rgba(219,254,82,0.10) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    /* the 3D character slot — fills viewport, dark */
+    #character-reveal .cr-slot {
+      position: absolute;
+      inset: 0;
+      background: transparent;
+      border: 0;
+      color: rgba(242,243,236,0.65);
+    }
+    #character-reveal .cr-slot::before {
+      background-image: repeating-linear-gradient(-45deg, transparent 0, transparent 22px, rgba(242,243,236,0.04) 22px, rgba(242,243,236,0.04) 44px);
+    }
+    #character-reveal .cr-slot::after { color: rgba(242,243,236,0.32); }
+    #character-reveal .cr-slot .slot-kind {
+      background: rgba(255,255,255,0.08);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    #character-reveal .cr-slot .slot-name { color: #F2F3EC; }
+
+    /* overlay text inside character reveal */
+    #character-reveal .cr-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      padding: clamp(2rem, 6vh, 5rem) clamp(1.5rem, 4vw, 4rem);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      color: #F2F3EC;
+    }
+    #character-reveal .cr-top {
+      font: 500 0.7rem/1 var(--f-mono);
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: rgba(242,243,236,0.7);
+    }
+    #character-reveal .cr-bottom {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 1rem;
+    }
+    #character-reveal .cr-headline {
+      font: 900 clamp(2rem, 5vw, 4.5rem)/0.95 var(--f-sans);
+      letter-spacing: -0.045em;
+      text-transform: uppercase;
+      max-width: 18ch;
+      text-wrap: balance;
+    }
+    #character-reveal .cr-headline em {
+      font-style: normal;
+      color: var(--accent);
+    }
+    #character-reveal .cr-meta {
+      font: 500 0.68rem/1.5 var(--f-mono);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: rgba(242,243,236,0.55);
+      text-align: right;
+    }
+
+    /* ─── summary section ─── */
+    #summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+      gap: clamp(2rem, 5vw, 5rem);
+      align-items: start;
+    }
+    @media (max-width: 980px) { #summary { grid-template-columns: 1fr; } }
+    #summary .body p {
+      font: 400 clamp(1.05rem, 1.3vw, 1.18rem)/1.65 var(--f-sans);
+      color: var(--ink);
+      max-width: 60ch;
+      text-wrap: pretty;
+      margin-bottom: 1.25rem;
+    }
+    #summary .body p strong { color: var(--ink); font-weight: 600; }
+    #summary .body p em { font-style: normal; background: var(--accent); color: var(--accent-ink); padding: 0 0.16em; }
+    #summary .stack-right {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      position: sticky;
+      top: 6rem;
+    }
+    #summary .slot-portrait { aspect-ratio: 4/5; min-height: 380px; }
+
+    /* ─── two-column layouts ─── */
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+      gap: clamp(2rem, 5vw, 4rem);
+      align-items: start;
+    }
+    @media (max-width: 980px) { .split { grid-template-columns: 1fr; } }
+    .split.flip { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
+    .split .visual-rail {
+      position: sticky;
+      top: 6rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    @media (max-width: 980px) {
+      .split .visual-rail { position: static; }
+    }
+
+    /* education tagline strip */
+    .edu-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border: 1px solid var(--rule);
+      margin-top: 1.5rem;
+    }
+    .edu-strip .cell {
+      padding: 1.1rem 1.2rem;
+      display: flex; flex-direction: column; gap: 0.4rem;
+    }
+    .edu-strip .cell + .cell { border-left: 1px solid var(--rule); }
+    @media (max-width: 720px) {
+      .edu-strip { grid-template-columns: 1fr 1fr; }
+      .edu-strip .cell:nth-child(3) { border-left: 0; border-top: 1px solid var(--rule); }
+      .edu-strip .cell:nth-child(4) { border-top: 1px solid var(--rule); }
+    }
+    .edu-strip .k {
+      font: 500 0.6rem/1 var(--f-mono);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+    .edu-strip .v {
+      font: 800 1.05rem/1.2 var(--f-sans);
+      letter-spacing: -0.015em;
+    }
+
+    /* skill summary */
+    #skills .skill-group {
+      padding: clamp(1.5rem, 3vh, 2rem) 0;
+      border-top: 1px solid var(--rule);
+      display: grid;
+      grid-template-columns: 14rem minmax(0, 1fr);
+      gap: clamp(1rem, 2vw, 2rem);
+      align-items: baseline;
+    }
+    @media (max-width: 720px) { #skills .skill-group { grid-template-columns: 1fr; gap: 0.5rem; } }
+    #skills .skill-group:first-of-type { border-top: 0; padding-top: 0; }
+    #skills .skill-group .h {
+      font: 700 0.85rem/1.3 var(--f-sans);
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--ink);
+    }
+    #skills .skill-group .tags {
+      display: flex; flex-wrap: wrap; gap: 0.4rem 0.5rem;
+    }
+    #skills .skill-group .skill-tag {
+      font: 500 0.72rem/1 var(--f-mono);
+      letter-spacing: 0.04em;
+      padding: 0.45rem 0.7rem;
+      border: 1px solid var(--rule);
+      color: var(--ink-soft);
+    }
+
+    /* footer / contact */
+    .footer {
+      padding: clamp(3rem, 8vh, 6rem) var(--gutter-x);
+      background: var(--ink);
+      color: var(--paper);
+      border-top: 1px solid var(--ink);
+    }
+    .footer .footer-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+      gap: clamp(2rem, 5vw, 5rem);
+      align-items: end;
+    }
+    @media (max-width: 880px) { .footer .footer-grid { grid-template-columns: 1fr; align-items: start; gap: 2rem; } }
+    .footer h2 {
+      font: 900 clamp(2.4rem, 6vw, 5rem)/0.9 var(--f-sans);
+      letter-spacing: -0.04em;
+      text-transform: uppercase;
+      max-width: 14ch;
+    }
+    .footer h2 em { font-style: normal; color: var(--accent); }
+    .footer .links {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: rgba(255,255,255,0.18);
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+    @media (max-width: 520px) { .footer .links { grid-template-columns: 1fr; } }
+    .footer .links a {
+      background: var(--ink);
+      padding: 1.1rem 1.25rem;
+      display: flex; flex-direction: column; gap: 0.4rem;
+      transition: background 0.25s ease;
+    }
+    .footer .links a:hover { background: var(--accent); color: var(--accent-ink); }
+    .footer .links .k {
+      font: 500 0.58rem/1 var(--f-mono);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      opacity: 0.55;
+    }
+    .footer .links a:hover .k { opacity: 0.85; }
+    .footer .links .v {
+      font: 600 0.92rem/1.3 var(--f-mono);
+      letter-spacing: 0.02em;
+    }
+    .footer .colophon {
+      grid-column: 1 / -1;
+      padding-top: 2rem;
+      margin-top: 2rem;
+      border-top: 1px solid rgba(255,255,255,0.18);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 1rem;
+      font: 500 0.62rem/1 var(--f-mono);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.45);
+    }
+  </style>
+</head>
+<body data-screen-label="Portfolio · One-page">
+
+<header class="topbar">
+  <a href="#hero" class="brand">
+    <span class="brand-dot"></span>
+    ADARSH GOLAIT
+    <span class="brand-sub">— Portfolio</span>
+  </a>
+  <nav class="nav" aria-label="Primary">
+    <a href="#education" data-section="education"><span class="nav-num">01</span><span class="nav-label">Education</span></a>
+    <a href="#experience" data-section="experience"><span class="nav-num">02</span><span class="nav-label">Experience</span></a>
+    <a href="#corporate" data-section="corporate"><span class="nav-num">03</span><span class="nav-label">Projects</span></a>
+    <a href="#por" data-section="por"><span class="nav-num">04</span><span class="nav-label">Responsibility</span></a>
+    <a href="#awards" data-section="awards"><span class="nav-num">05</span><span class="nav-label">Achievements</span></a>
+    <a href="#skills" data-section="skills"><span class="nav-num">06</span><span class="nav-label">Skills</span></a>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ════════════════════════════════════════════════════════════
+       00 · HERO (slot for existing 3D fluid character)
+       ════════════════════════════════════════════════════════════ -->
+  <section id="hero" data-screen-label="Hero">
+    <div class="slot dark hero-slot" data-screen-label="Hero · 3D slot">
+      <div class="slot-body">
+        <span class="slot-kind" data-kind="3D">3D · Fluid reveal hero</span>
+        <span class="slot-name">Existing HeroSection.vue mounts here · base-photo + layered-photo + fluid sim + parallax</span>
+        <span class="slot-aspect">100vw × 100vh · WebGL canvas</span>
+      </div>
+    </div>
+    <div class="hero-overlay">
+      <div class="tagline-block">
+        <p class="tagline">Redefining limits, creating endless possibilities</p>
+        <span class="stack-divider"></span>
+      </div>
+      <h1 class="hero-name">
+        <span class="l1">ADARSH</span>
+        <span class="l2">GOLAIT</span>
+      </h1>
+    </div>
+    <a href="#summary" class="scroll-cue" aria-label="Scroll to next section">
+      <span class="scroll-cue-label">Scroll</span>
+      <span class="scroll-cue-track"><span class="scroll-cue-bead"></span></span>
+    </a>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════
+       00.b · INTRO MESSAGE (dark — topographic + marquee + signature)
+       Sits between the fluid hero and the 3D character reveal.
+       ════════════════════════════════════════════════════════════ -->
+  <section id="intro-message" data-screen-label="Intro · Message">
+    <header class="im-top">
+      <div class="lockup">
+        <span class="ll l1">ADARSH</span>
+        <span class="ll l2">GOLAIT</span>
+      </div>
+      <div class="center">
+        <span class="mark" aria-hidden="true">AG</span>
+        <span class="label">A note from Adarsh</span>
+      </div>
+      <div class="right">
+        <a href="#contact" class="cta">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h10" stroke-linecap="square"></path>
+          </svg>
+          Résumé
+        </a>
+      </div>
+    </header>
+
+    <!-- two-row marquee, behind portrait -->
+    <div class="im-marquee row-1" aria-hidden="true">
+      <div class="track">
+        <span class="word">Built it from raw stock<span class="dot"></span></span>
+        <span class="word">cut the cycle by ninety percent<span class="dot"></span></span>
+        <span class="word">held the line solo<span class="dot"></span></span>
+        <span class="word">— and shipped it anyway<span class="dot"></span></span>
+        <span class="word">Built it from raw stock<span class="dot"></span></span>
+        <span class="word">cut the cycle by ninety percent<span class="dot"></span></span>
+        <span class="word">held the line solo<span class="dot"></span></span>
+        <span class="word">— and shipped it anyway<span class="dot"></span></span>
+      </div>
+    </div>
+    <div class="im-marquee row-2" aria-hidden="true">
+      <div class="track">
+        <span class="word">REDEFINING LIMITS<span class="dot"></span></span>
+        <span class="word">BUILDING SYSTEMS<span class="dot"></span></span>
+        <span class="word">HARDWARE-FIRST<span class="dot"></span></span>
+        <span class="word">OPERATING SOLO<span class="dot"></span></span>
+        <span class="word">REDEFINING LIMITS<span class="dot"></span></span>
+        <span class="word">BUILDING SYSTEMS<span class="dot"></span></span>
+        <span class="word">HARDWARE-FIRST<span class="dot"></span></span>
+        <span class="word">OPERATING SOLO<span class="dot"></span></span>
+      </div>
+    </div>
+
+    <!-- portrait + signature overlay -->
+    <div class="im-stage">
+      <div class="im-frame">
+        <div class="slot" data-screen-label="Slot · Portrait (dark)">
+          <div class="slot-body">
+            <span class="slot-kind" data-kind="PHOTO">Photo · B/W</span>
+            <span class="slot-name">Portrait — desaturated, mid-tone</span>
+            <span class="slot-aspect">4 : 5 · ≥ 1200px tall</span>
+          </div>
+        </div>
+        <div class="im-signature" aria-hidden="true">
+          <!-- placeholder signature scribble — replace path d="" with Adarsh's actual SVG signature -->
+          <svg viewBox="0 0 820 420" xmlns="http://www.w3.org/2000/svg">
+            <path d="M70 240
+                     C 140 130, 230 110, 280 180
+                     C 320 240, 240 320, 200 280
+                     C 150 230, 230 150, 320 170
+                     C 410 195, 470 280, 560 230
+                     C 640 185, 600 90, 520 130
+                     C 430 175, 510 290, 620 270
+                     C 730 250, 760 180, 700 145
+                     M 200 320
+                     C 280 290, 380 360, 480 320
+                     C 580 280, 660 360, 740 320" />
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- footer rail -->
+    <footer class="im-foot">
+      <p class="caption">
+        <strong>Mechanical engineer.</strong> Operations &amp; program build, hands-on.<br />
+        Mumbai · open to product-ops at hardware-first companies.
+      </p>
+      <a href="#character-reveal" class="scroll-down" aria-label="Scroll to the character reveal">
+        <span>Keep scrolling</span>
+        <span class="arrow"></span>
+      </a>
+      <p class="timestamp">
+        IITGN '23 · Axis Bank '23— · Mumbai<br />
+        Portfolio · 2026
+      </p>
+    </footer>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════
+       00.c · CHARACTER REVEAL — moving 3D character slot
+       Sticky-scroll wrapper drives a "performs as you scroll" effect.
+       ════════════════════════════════════════════════════════════ -->
+  <section id="character-reveal" data-screen-label="Character reveal">
+    <div class="cr-sticky">
+      <div class="cr-bg">
+        <div class="slot cr-slot" data-screen-label="Slot · Moving 3D character">
+          <div class="slot-body">
+            <span class="slot-kind" data-kind="3D">3D · Animated</span>
+            <span class="slot-name">Moving 3D character — walking / idle cycle driven by scroll</span>
+            <span class="slot-aspect">100vw × 100vh · scroll-linked animation</span>
+          </div>
+        </div>
+        <div class="cr-overlay">
+          <span class="cr-top">— Meet Adarsh</span>
+          <div></div>
+          <div class="cr-bottom">
+            <h2 class="cr-headline">A <em>moving</em><br />operator — not a still one.</h2>
+            <p class="cr-meta">Scroll to enter the work →</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════
+       Summary
+       ════════════════════════════════════════════════════════════ -->
+  <section id="summary" class="section" data-screen-label="Summary">
+    <div class="body">
+      <span class="section-num">·</span>
+      <h2 class="section-title">Summary</h2>
+      <p>
+        Mechanical Engineer from IIT Gandhinagar (Gold Medalist, CPI 8.18) with hands-on hardware build experience — go-kart fabrication from raw stock, control system prototyping, and on-ground vendor sourcing at a consumer hardware startup.
+      </p>
+      <p>
+        As Welfare Secretary at IITGN, served as the sole operational bridge between a 2,000+ student community and the institute administration — coordinating a 25-member council across hostels, mess, health services, and campus outlets, and running a structured trial-based vendor selection process replacing an unstructured legacy approach.
+      </p>
+      <p>
+        Three years at Axis Bank applying that engineering and operations instinct to building infrastructure from zero: designed a <strong>modular production framework (7 reusable modules) adopted unmodified by an external engineering team</strong>, owned an 18-month, 4-team vendor program with TCS as sole internal coordinator, <em>cut a business-critical monthly pipeline turnaround by 90% (2–3 days → 3 hours)</em>, and held 100% production continuity as solo operator through a complete team transition.
+      </p>
+      <p>
+        Transitioning into product operations at hardware-first companies.
+      </p>
+    </div>
+    <div class="stack-right">
+      <div class="slot slot-portrait" data-screen-label="Slot · Portrait">
+        <div class="slot-body">
+          <span class="slot-kind" data-kind="PHOTO">Photo</span>
+          <span class="slot-name">Portrait / hero-character base</span>
+          <span class="slot-aspect">4 : 5 · ≥ 1200px tall</span>
+        </div>
+      </div>
+      <div class="slot" data-screen-label="Slot · Signature animation" style="aspect-ratio: 4/3; min-height: 220px;">
+        <div class="slot-body">
+          <span class="slot-kind" data-kind="ANIM">Animation</span>
+          <span class="slot-name">Signature / handwriting reveal</span>
+          <span class="slot-aspect">4 : 3 · Lottie or SVG path</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════
+       Education
+       ════════════════════════════════════════════════════════════ -->
+  <section id="education" class="section" data-screen-label="Education">
+    <span class="section-num">01 · Education</span>
+    <h2 class="section-title">Education</h2>
+
+    <div class="split">
+      <div>
+        <article class="entry">
+          <div class="entry-head">
+            <p class="entry-title">Indian Institute of Technology Gandhinagar (IITGN)</p>
+            <span class="entry-when">July, 2019 — July, 2023 · Gujarat</span>
+          </div>
+          <p class="entry-sub">Bachelor of Technology, Mechanical Engineering <span class="pipe">·</span> CPI: 8.18 / 10 <span class="pipe">·</span> Dean's List (Sem 4)</p>
+          <p class="entry-sub" style="color: var(--ink);">
+            <strong style="font-weight:700;">Gold Medalist — Outstanding Social Service</strong> <span class="pipe">·</span> Convocation 2023
+          </p>
+
+          <div class="edu-strip">
+            <div class="cell"><span class="k">CPI</span><span class="v">8.18 / 10</span></div>
+            <div class="cell"><span class="k">Dean's List</span><span class="v">Sem 4 · 2021</span></div>
+            <div class="cell"><span class="k">Honour</span><span class="v">Gold Medal '23</span></div>
+            <div class="cell"><span class="k">Duration</span><span class="v">4 years</span></div>
+          </div>
+        </article>
+      </div>
+
+      <div class="visual-rail">
+        <div class="slot" data-screen-label="Slot · IITGN campus" style="aspect-ratio: 4/3;">
+          <div class="slot-body">
+            <span class="slot-kind" data-kind="3D">3D</span>
+            <span class="slot-name">IITGN campus / academic block model</span>
+            <span class="slot-aspect">4 : 3</span>
+          </div>
+        </div>
+        <div class="slot accent" data-screen-label="Slot · Gold medal" style="aspect-ratio: 1/1;">
+          <div class="slot-body">
+            <span class="slot-kind" data-kind="3D">3D</span>
+            <span class="slot-name">Gold Medal — Outstanding Social Service</span>
+            <span class="slot-aspect">1 : 1 · medallion rotation</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════
+       Work Experience
+       ════════════════════════════════════════════════════════════ -->
+  <section id="experience" class="section" data-screen-label="Work Experience">
+    <span class="section-num">02 · Work Experience</span>
+    <h2 class="section-title">Work Experience</h2>
+
+    <div class="split flip">
+      <div class="visual-rail">
+        <div class="slot dark" data-screen-label="Slot · Axis Bank tower" style="aspect-ratio: 3/4; min-height: 380px;">
+          <div class="slot-body">
+            <span class="slot-kind" data-kind="PHOTO">Photo</span>
+            <span class="slot-name">Axis Bank Mumbai HQ · workspace</span>
+            <span class="slot-aspect">3 : 4 · environmental shot</span>
+          </div>
+        </div>
+        <div class="slot" data-screen-label="Slot · Workflow loop" style="aspect-ratio: 1/1;">
+          <div class="slot-body">
+            <span class="slot-kind" data-kind="ANIM">Animation</span>
+            <span class="slot-name">Forecasting framework — module loop</span>
+            <span class="slot-aspect">1 : 1 · looping diagram</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <article class="entry">
+          <div class="entry-head">
+            <p class="entry-title">Financial Modelling Team — Operations &amp; Framework Build, @Axis Bank</p>
+          </div>
+          <p class="entry-sub">
+            <span>Senior Manager (Promoted)</span>
+            <span class="pipe">·</span>
+            <span>May, 2025 — Present · Mumbai</span>
+          </p>
+          <p class="entry-sub">
+            <span>Manager</span>
+            <span class="pipe">·</span>
+            <span>July, 2023 — April, 2025 · Mumbai</span>
+          </p>
+        </article>
+
+        <article class="entry">
+          <div class="entry-head">
+            <p class="entry-title">Product Development Intern — Prototyping &amp; Vendor Sourcing, @SmartoKids</p>
+            <span class="entry-when">May, 2022 — July, 2022 · Ahmedabad</span>
+          </div>
+        </article>
+
+        <article class="entry">
+          <div class="entry-head">
+            <p class="entry-title">Vocational Trainee, Industrial Systems Exposure, @Tata Steel</p>
+            <span class="entry-when">May, 2021 — July, 2021 · Virtual</span>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════
+       Corporate Projects (8)
+       ════════════════════════════════════════════════════════════ -->
+  <section id="corporate" class="section" data-screen-label="Corporate Projects">
+    <span class="section-num">03 · Corporate Projects</span>
+    <h2 class="section-title">Corporate<br /><span class="accent-line">Projects</span></h2>
+    <p class="section-lede">
+      Eight programs across Axis Bank, SmartoKids and Tata Steel — modular forecasting frameworks, multi-team vendor coordination, pipeline rebuilds, and industrial systems study. Every record below uses the role, organisation, dates and bullets as listed on the master résumé.
+    </p>
+
+    <!-- ─ Project 1 ─ -->
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Modular Production Framework — Built from Zero across Retail Asset Models</p>
+        <span class="entry-when">July, 2023 — Present</span>
+      </div>
+      <p class="entry-sub"><span>Manager / Senior Manager</span><span class="pipe">|</span><span>Axis Bank</span></p>
+
+      <div class="split" style="margin-top: 1rem;">
+        <ul class="bullets">
+          <li>Architected and shipped a modular PySpark forecasting framework from zero — 7 reusable modules driven by a single parameter file — enabling any product model to run through the same scalable production pipeline with zero structural rework; framework was adopted unmodified by the TCS engineering team, validating the generalised architecture.</li>
+          <li>Migrated 3 product models end-to-end (Personal Loan, Auto Loan, Commercial Vehicle) from legacy SAS to PySpark — rebuilt all production logic and historical curves from scratch, eliminated all spreadsheet dependencies, and transitioned every model to governed star-schema tables for repeatable, audit-ready production cycles.</li>
+          <li><strong>Compressed end-to-end model upgrade cycles from 2–3 weeks to 2–4 days</strong> (an 80%+ reduction including upstream dependency coordination) through the modular framework, parameter-driven inputs, and standardised data plumbing — once dependencies were pre-sorted, single-day modify-and-release cycles became routine for targeted updates.</li>
+          <li>Engineered two recency-adjustment modules and a loss-balance calculator from scratch — the calculator required a novel data-mapping strategy after the upstream reporting dashboard was decommissioned, preserving full system integrity with zero data loss across all downstream outputs.</li>
+          <li>Mentored a junior team member to first production deployment on the Education Loan model in ~5 weeks against a typical from-scratch build of 3–4 months — the generic modular framework cut onboarding-to-delivery time by ~75%.</li>
+          <li>Owned end-to-end production delivery of 9 quarterly models (4 Retail Asset + 5 Agri products) as the sole accountable owner per cycle — stakeholder management across Business, Analytics, and Finance sign-off; production deployments through Jenkins CI/CD with version control on BitBucket.</li>
+          <li>Standardised process design and delivery methodology across all 9 models — logic upgrades rollable across the full portfolio in a single production cycle, eliminating per-model rework and enabling same-cycle updates across all products without regression.</li>
+        </ul>
+
+        <div class="visual-rail">
+          <div class="slot" data-screen-label="Slot · Module loop" style="aspect-ratio: 4/3;">
+            <div class="slot-body">
+              <span class="slot-kind" data-kind="ANIM">Diagram</span>
+              <span class="slot-name">7-module framework — single param file → 9 models</span>
+              <span class="slot-aspect">4 : 3 · architecture loop</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─ Project 2 ─ -->
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Valuation Model &amp; Profit Score Automation with TCS — Program Ownership across 4 Internal Teams</p>
+        <span class="entry-when">April, 2024 — December, 2025</span>
+      </div>
+      <p class="entry-sub"><span>Senior Manager</span><span class="pipe">|</span><span>Axis Bank</span></p>
+
+      <div class="split flip" style="margin-top: 1rem;">
+        <div class="visual-rail">
+          <div class="slot" data-screen-label="Slot · 4-team coordination" style="aspect-ratio: 1/1;">
+            <div class="slot-body">
+              <span class="slot-kind" data-kind="3D">3D / Diagram</span>
+              <span class="slot-name">4 internal teams + TCS engineering — coordination map</span>
+              <span class="slot-aspect">1 : 1</span>
+            </div>
+          </div>
+        </div>
+        <ul class="bullets">
+          <li>Sole internal program owner — no co-owner — across an 18-month multi-team vendor engagement with <strong>TCS</strong>: coordinated 4 internal teams (Business, Analytics, Data Engineering, Financial Modelling) and a 6–8 person external engineering team from requirements through production deployment, running a 1-year valuation model automation track and a 6-month profitability score automation track concurrently without a dedicated program manager role.</li>
+          <li>Translated internal modelling logic into precise vendor framework requirements; reviewed every iteration, caught edge cases that would have caused silent downstream errors, and gated production stability before each release — 8 systems delivered under this program (2 valuation models + 6 profit scores: CCPS, ATM, TD, MAB, CVS, Cash Profitability), as sole internal coordinator.</li>
+          <li>Supplied 7 reusable PySpark modules from my own migration framework directly to the TCS engineering team — adopted without modification; the generalised architecture of my framework independently converged with TCS's automation design, cutting vendor onboarding time and preserving internal methodology end-to-end across all automated systems.</li>
+          <li>Genericised the Personal Loan assumption builder on the vendor framework — reverse-engineered existing business logic across dimensional splits, weighted input derivations, risk factor treatment, and cashflow computation; extended a single-product framework to support Personal Loans with product-level logic isolated and configurable, eliminating recurring manual input steps from every monthly production cycle.</li>
+          <li>Designed and enforced a data quality and validation layer across both automation tracks — preventing downstream breakages across 12+ monthly production cycles; extended the system for 2+ years of retro-run capability, enabling full historical back-population at program launch.</li>
+          <li>Authored strategic review packs and model performance briefings consumed directly in executive and investor-facing presentations — scenario analysis, output reconciliation, and quantitative backing for senior leadership decisions.</li>
+        </ul>
+      </div>
+    </article>
+
+    <!-- ─ Project 3 ─ -->
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Credit Card Profitability Pipeline — 90% Turnaround Reduction</p>
+        <span class="entry-when">May, 2023 — Present</span>
+      </div>
+      <p class="entry-sub"><span>Manager / Senior Manager</span><span class="pipe">|</span><span>Axis Bank</span></p>
+
+      <div class="split" style="margin-top: 1rem;">
+        <ul class="bullets">
+          <li><em>Cut monthly delivery turnaround by over 90%</em> (2–3 days → 3 hours) by redesigning the CCPS data pipeline and automating input validation — eliminated a recurring manual bottleneck and compressed the decision cycle for Business Analytics and Finance across 12+ monthly production cycles.</li>
+          <li>Owned end-to-end monthly production delivery of the Credit Card Profit Score (CCPS) — an account-level profitability model combining revenue, reward cost, credit cost, and fee components — whose outputs directly drove performance targets for Credit Card leadership and field sales teams.</li>
+          <li>Maintained continuous output integrity across 12+ production cycles by tracing and correcting logic failures at source — root causes included zero-output components from source mapping gaps, cost reclassification following upstream booking-method changes, and component corrections preventing output inflation from unrelated data entries; each fix applied in isolation without disrupting downstream outputs or requiring a full pipeline rerun.</li>
+          <li>Corrected PBT calculation logic across 2 pipeline migrations (Informatica → TCS framework) — reconciled with Analytics and Data Engineering to prevent output drift; corrections covered credit cost true-up, reward cost bifurcation, fee derecognition, and netting-off components.</li>
+          <li>Executed back-corrections across 13+ months of historical data following logic fixes — ran data quality checks at each stage and aligned all downstream consumer teams on output changes before resuming regular production runs; system validated for 2-year retro-run capability.</li>
+        </ul>
+
+        <div class="visual-rail">
+          <div class="slot" data-screen-label="Slot · 2d→3h" style="aspect-ratio: 4/3;">
+            <div class="slot-body">
+              <span class="slot-kind" data-kind="ANIM">Animation</span>
+              <span class="slot-name">Turnaround compression: 2–3 days → 3 hours</span>
+              <span class="slot-aspect">4 : 3 · before/after</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─ Project 4 ─ -->
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Solo Operational Ownership Through Team Transition</p>
+        <span class="entry-when">January, 2025 — April, 2025</span>
+      </div>
+      <p class="entry-sub"><span>Manager</span><span class="pipe">|</span><span>Axis Bank</span></p>
+
+      <ul class="bullets">
+        <li>Held full delivery of the Financial Modelling portfolio as sole owner for 3 months during a team transition — <strong>zero missed deadlines, zero production disruptions, no external ramp-up or support</strong>.</li>
+        <li>Managed 10+ concurrent active deliverables simultaneously — production releases for 4 own valuation models, CCPS, and NCL multiplier; handoffs of 4 profit scores to BA teams (ATM, TD, MAB, TRV); ownership transfers of 5 Agri models to incoming team members — while managing stakeholder expectations across Business and Analytics throughout.</li>
+        <li>Led the team rebuild end-to-end once new hires arrived — designed a two-directional structured handover, authored SOPs covering production pipeline architecture, and ran knowledge transfer sessions that brought the new team to independent delivery within their first quarter.</li>
+      </ul>
+    </article>
+
+    <!-- ─ Project 5 ─ -->
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">NCL Multiplier — Monthly Pipeline Operations &amp; Root-Cause Debugging</p>
+        <span class="entry-when">January, 2025 — Present</span>
+      </div>
+      <p class="entry-sub"><span>Senior Manager</span><span class="pipe">|</span><span>Axis Bank</span></p>
+
+      <div class="split flip" style="margin-top: 1rem;">
+        <div class="visual-rail">
+          <div class="slot" data-screen-label="Slot · scale viz" style="aspect-ratio: 1/1;">
+            <div class="slot-body">
+              <span class="slot-kind" data-kind="ANIM">Visualisation</span>
+              <span class="slot-name">50 lakh+ accounts · 8 products · monthly cycle</span>
+              <span class="slot-aspect">1 : 1 · scale visual</span>
+            </div>
+          </div>
+        </div>
+        <ul class="bullets">
+          <li>Owned end-to-end monthly production execution of a multi-product loss rate pipeline <strong>covering 8 products and processing 50 lakh+ accounts per monthly run</strong> — account-level data pulls, product-bucket standardisation, vintage tracking, fresh slippage identification, overdue balance computation, and derivation of annualised outputs (fresh slippages, post-linkage loss rates, post-recovery loss rates, and bucket multipliers) — with zero missed release cycles across the full ownership period.</li>
+          <li>Built a formula-driven validation layer from scratch for retro-run reconciliation — outputs reconcilable line-by-line per product and period rather than treated as a black box; provided the audit trail needed to communicate output changes credibly to downstream teams.</li>
+          <li>Traced a recurring output discrepancy to an upstream source-data coverage gap — identified root cause through systematic data tracing, confirmed scope of impact, and delivered a documented root cause analysis that backed stakeholder communication rather than merely flagging the anomaly.</li>
+          <li>Identified and corrected a product-specific code error causing downstream report generation failures — isolated the fault, applied targeted logic correction, validated outputs against expected ranges, and restored uninterrupted monthly production delivery without requiring a full system rebuild.</li>
+        </ul>
+      </div>
+    </article>
+
+    <!-- ─ Project 6 ─ -->
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Unified Profitability Infrastructure — Systems Design from Fragmented Sources</p>
+        <span class="entry-when">April, 2025 — Present</span>
+      </div>
+      <p class="entry-sub"><span>Senior Manager</span><span class="pipe">|</span><span>Axis Bank</span></p>
+
+      <ul class="bullets">
+        <li>Designed and shipped a unified, account-level profitability master from zero — <strong>processes revenue, cost, PBT, RAROC, and NCL across ~6 crore accounts spanning 30+ products</strong> in a single harmonised structure, replacing a workflow that previously required manual reconciliation across disconnected sources before any cross-product view was possible.</li>
+        <li>Diagnosed the structural data problem: profitability outputs existed across disconnected frameworks with inconsistent logic, fragmented customer-base coverage, and no unified account-level view — making cross-product comparison unreliable and consumption-unfriendly for downstream analytics and reporting teams.</li>
+        <li>Mapped the customer base across multiple existing profitability frameworks, matched records back to their source frameworks, and connected account populations that fell outside the coverage of any prior framework — improving overall completeness of the profitability universe.</li>
+        <li>Built the bridging logic that brings fragmented frameworks together into a single consumption-ready table — standardised revenue, fee, cost, expected loss, and profit components; resolved product-mapping inconsistencies and overlaps at both customer and account level to ensure completeness without double-counting.</li>
+        <li>Delivered a consumption-ready output structure that downstream analytics and reporting teams could query directly — eliminated the manual reconciliation step from every cross-product report.</li>
+      </ul>
+    </article>
+
+    <!-- ─ Project 7 ─ -->
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Product Development — Prototyping, Iteration, and On-Ground Vendor Sourcing</p>
+        <span class="entry-when">May, 2022 — July, 2022</span>
+      </div>
+      <p class="entry-sub">
+        <a href="https://drive.google.com/file/d/1nHJQMDm9WLH55x5v1CwYZo8Knen_4E2s/view" target="_blank" rel="noopener" style="text-decoration:underline;">Internship Certificate</a>
+        <span class="pipe">|</span>
+        <span>SmartoKids Commerce Pvt. Ltd.</span>
+      </p>
+
+      <div class="split" style="margin-top: 1rem;">
+        <ul class="bullets">
+          <li>Reverse-engineered 10+ competing hardware products to extract reusable design patterns (features, materials, assembly approach) and proposed new concepts within explicit cost and production constraints — directly informing the product development roadmap.</li>
+          <li>Led rapid prototyping from concept to testable builds — created CAD models and fabricated iterations using laser cutters, MDF sheets, and 3D printing across iteration cycles to validate feasibility before committing any design to production.</li>
+          <li>Managed on-ground vendor relationships end-to-end: visited suppliers, assessed capabilities and constraints, compared quotes, and supported negotiations to align cost, quality, and timelines; gained direct exposure to hardware procurement and supply chain decisions that precede production.</li>
+          <li>Built a structured competitor SKU catalog by web-scraping e-commerce listings; organised by category, price bands, materials, and feature-set to support ideation and prioritisation decisions.</li>
+        </ul>
+
+        <div class="visual-rail">
+          <div class="slot" data-screen-label="Slot · prototype" style="aspect-ratio: 4/3;">
+            <div class="slot-body">
+              <span class="slot-kind" data-kind="3D">3D</span>
+              <span class="slot-name">SmartoKids prototype — CAD / MDF iteration</span>
+              <span class="slot-aspect">4 : 3</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─ Project 8 ─ -->
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Industrial Systems Study — Bulk Material Handling Equipment at Tata Steel</p>
+        <span class="entry-when">May, 2021 — July, 2021</span>
+      </div>
+      <p class="entry-sub">
+        <span>Vocational Trainee</span>
+        <span class="pipe">|</span>
+        <a href="https://drive.google.com/file/d/1wA0e7VINckpSwxrobc2dkNCyXB_IlRlZ/view" target="_blank" rel="noopener" style="text-decoration:underline;">Certificate</a>
+        <span class="pipe">|</span>
+        <a href="https://drive.google.com/file/d/1FeGPjXIIYyOQgPuM2jX-9NvQTsRHz3r9/view" target="_blank" rel="noopener" style="text-decoration:underline;">Report</a>
+      </p>
+
+      <ul class="bullets">
+        <li>Studied bulk material handling equipment at a live Tata Steel plant — focused on belt conveyor systems covering construction (carcass, cover layers, splicing methods), idler types (troughing, impact, return), drive arrangements (single drum, snubbed, tandem), and power unit selection for continuous high-load operation.</li>
+        <li>Authored a structured technical report translating plant observations into decision-oriented documentation — compared vulcanisation vs. mechanical splicing tradeoffs (installation time, failure modes, operating conditions), analysed belt inclination limits and surcharge angles for different bulk solids, and produced selection guidance grounded in operational reliability criteria.</li>
+      </ul>
+    </article>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════
+       Academic Projects (6) — strong 3D-model candidates
+       ════════════════════════════════════════════════════════════ -->
+  <section id="academic" class="section" data-screen-label="Academic Projects">
+    <span class="section-num">03.b · Academic Projects</span>
+    <h2 class="section-title">Academic<br /><span class="accent-line">Projects</span></h2>
+    <p class="section-lede">
+      Six physical hardware builds at IIT Gandhinagar — each one a perfect target for an interactive 3D model alongside the writeup.
+    </p>
+
+    <!-- ─ Academic 1 — Go-Kart ─ -->
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Go-Kart — Full System Build from Raw Stock to Live Drive</p>
+        <span class="entry-when">March, 2022 — April, 2022</span>
+      </div>
+      <p class="entry-sub">
+        <a href="https://drive.google.com/file/d/1ISyMh713Xe9EiCL6Ku4CpUzXcwW-FJU1/view" target="_blank" rel="noopener" style="text-decoration:underline;">Project Video</a>
+        <span class="pipe">|</span>
+        <a href="https://drive.google.com/file/d/1tHUv4p33o5MtHJyL4L_5K1UbzSbgrafH/view" target="_blank" rel="noopener" style="text-decoration:underline;">Team</a>
+        <span class="pipe">|</span>
+        <span>Advisor: Prof. Harish PM</span>
+      </p>
+
+      <div class="split" style="margin-top: 1rem;">
+        <ul class="bullets">
+          <li>Built a go-kart from scratch as part of a 10-member team: converted an initial concept into a build-ready design by finalising key dimensions, creating the full CAD, and planning the fabrication and assembly sequence.</li>
+          <li>Fabricated the frame and chassis from lab stock using cutting, sanding, welding, lathe work, grinding, and precision fitting — from raw material to a drive-ready structure; sourced engine from Delhi, adapted a bicycle braking system as a cost-effective constraint-driven solution, and procured chain-drive parts and tyres across Gandhinagar/Ahmedabad.</li>
+          <li>Evaluated multiple steering and braking setups, selected the most feasible configuration, and integrated it into a working vehicle delivered with a live drive demonstration; debugged system failures iteratively by diagnosing each specific failure point, applying a targeted fix, and re-testing rather than redesigning from scratch.</li>
+        </ul>
+
+        <div class="visual-rail">
+          <div class="slot" data-screen-label="Slot · Go-Kart 3D" style="aspect-ratio: 4/3; min-height: 360px;">
+            <div class="slot-body">
+              <span class="slot-kind" data-kind="3D">3D · Featured</span>
+              <span class="slot-name">Go-Kart — full chassis / drivable rig</span>
+              <span class="slot-aspect">4 : 3 · orbit + explode</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─ Academic 2 — Inverted Pendulum ─ -->
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Energy Efficient Control of Inverted Pendulum</p>
+        <span class="entry-when">April, 2022</span>
+      </div>
+      <p class="entry-sub">
+        <a href="https://drive.google.com/file/d/1JoBnupwAd_gvdzfio9srCIoMLRYLAzc1/view" target="_blank" rel="noopener" style="text-decoration:underline;">Project Video</a>
+        <span class="pipe">|</span>
+        <a href="https://drive.google.com/file/d/1fkPUp6bHTxHULA7tGd3fxiNw31WdLXKy/view" target="_blank" rel="noopener" style="text-decoration:underline;">Report</a>
+        <span class="pipe">|</span>
+        <a href="https://drive.google.com/file/d/16yHCzBDirX8PIeAXZRM4cfcvIgk45CAs/view" target="_blank" rel="noopener" style="text-decoration:underline;">Testing Rig</a>
+        <span class="pipe">|</span>
+        <span>Advisor: Prof. Madhu Vadali</span>
+      </p>
+
+      <div class="split flip" style="margin-top: 1rem;">
+        <div class="visual-rail">
+          <div class="slot" data-screen-label="Slot · Pendulum" style="aspect-ratio: 1/1;">
+            <div class="slot-body">
+              <span class="slot-kind" data-kind="3D">3D</span>
+              <span class="slot-name">Motor-actuated inverted pendulum rig</span>
+              <span class="slot-aspect">1 : 1 · swing-up motion</span>
+            </div>
+          </div>
+        </div>
+        <ul class="bullets">
+          <li>Designed and fabricated the motor-actuated inverted pendulum test rig from scratch using CAD and laser cutting — prioritised structural robustness so the setup could sustain repeated hard testing across destabilising and stabilising control experiments without mechanical failure at full motor RPM; rig held through complete experimental validation.</li>
+          <li>Led motor parameter identification using MATLAB System Identification Toolbox — designed two constrained experiments to isolate electrical (inductance, resistance) and mechanical (inertia, damping) parameters; used identified values to build a cascaded controller (energy-based swing-up sequence + PD position controller with current feedforward) and validated the energy-efficient strategy on the physical rig.</li>
+        </ul>
+      </div>
+    </article>
+
+    <!-- ─ Academic 3 — Ball on Beam ─ -->
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Ball on Beam — Mechanism Design, Hardware Integration &amp; Closed-Loop Control Setup</p>
+        <span class="entry-when">January 2022</span>
+      </div>
+      <p class="entry-sub">
+        <a href="https://drive.google.com/file/d/1FT_Wzwe9H6jTgkuAspJ2YjaYZ-4z4QHe/view" target="_blank" rel="noopener" style="text-decoration:underline;">Project Video</a>
+        <span class="pipe">|</span>
+        <span>Advisor: Prof. Harish PM</span>
+      </p>
+
+      <div class="split" style="margin-top: 1rem;">
+        <ul class="bullets">
+          <li>Designed the beam-tilting mechanism from first principles through iteration — evaluated linkage, direct-drive, and gear-sector actuation concepts against torque, speed, and fabrication constraints before committing to a gear-sector drive; fabricated the full load-bearing structure from laser-cut MDF with dimensional tolerances selected to match the closed-loop control requirements.</li>
+          <li>Integrated a complete multi-subsystem hardware stack from scratch with no reference design — DC motor, motor driver, position sensor, and Arduino controller — into a working closed-loop physical system; handled component selection, inter-subsystem interfacing, wiring, and embedded firmware, taking the build from disparate parts to active closed-loop sensor feedback.</li>
+          <li>Diagnosed and characterised a fundamental actuator-speed mismatch that threatened system viability — the supplied motor's 1000 RPM output was far beyond the controllable range required for stable beam actuation; applied gear reduction and iterative calibration to bring the system into an operable range, then documented the residual performance gap as a quantified hardware constraint rather than an unknown.</li>
+          <li>Delivered a working closed-loop system with full beam actuation, sensor feedback integration, and controller implementation; systematically characterised closed-loop performance across P and PD controller configurations and a sweep of gain values, generating a documented performance envelope — root cause analysis confirmed the binding constraint was the actuator-speed ceiling, not the control architecture, validating the controller design and isolating the failure to the physical subsystem.</li>
+        </ul>
+
+        <div class="visual-rail">
+          <div class="slot" data-screen-label="Slot · Ball on Beam" style="aspect-ratio: 4/3;">
+            <div class="slot-body">
+              <span class="slot-kind" data-kind="3D">3D</span>
+              <span class="slot-name">Ball-on-Beam — gear-sector drive + sensor feedback</span>
+              <span class="slot-aspect">4 : 3 · live ball tracking</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─ Academic 4 — Oldham Coupling ─ -->
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Oldham Coupling — CNC Machining, Mechanism Design &amp; Variable Offset System</p>
+        <span class="entry-when">February, 2022</span>
+      </div>
+      <p class="entry-sub">
+        <a href="https://drive.google.com/file/d/1I84sv3gypHiSbgT0E_j8CXTokQ4rwIKe/view" target="_blank" rel="noopener" style="text-decoration:underline;">Project Image-1</a>
+        <span class="pipe">|</span>
+        <a href="https://drive.google.com/file/d/1HIvkyE4g3bxuhzvuUYffncRWfb9ItdH4/view" target="_blank" rel="noopener" style="text-decoration:underline;">Project Image-2</a>
+        <span class="pipe">|</span>
+        <span>Advisor: Prof. Harish PM</span>
+      </p>
+
+      <div class="split flip" style="margin-top: 1rem;">
+        <div class="visual-rail">
+          <div class="slot" data-screen-label="Slot · Oldham" style="aspect-ratio: 1/1;">
+            <div class="slot-body">
+              <span class="slot-kind" data-kind="3D">3D</span>
+              <span class="slot-name">Oldham coupling — variable offset rig</span>
+              <span class="slot-aspect">1 : 1 · variable offset</span>
+            </div>
+          </div>
+        </div>
+        <ul class="bullets">
+          <li>Owned end-to-end system design of a functional Oldham coupling prototype — translated the three-disc mechanism concept into a fully integrated assembly, determining how each component (left disc, centre disc, right disc, shafts, bearings, and structural frame) would physically fit together and interface under rotation.</li>
+          <li>Designed the variable offset feature from first principles: introduced slotted vertical acrylic panels allowing the shaft mounting position to be adjusted continuously, enabling live demonstration of torque transmission across varying misalignment conditions beyond the minimum 15 mm specified.</li>
+          <li>Specified and integrated bearings at the shaft–panel interface to decouple rotational motion from the fixed acrylic frame — the key design decision that eliminated binding and allowed smooth shaft rotation independent of structural loads.</li>
+          <li>Iterated on coupling disc geometry and sliding clearances across multiple versions to resolve fit issues arising from tolerance mismatches between CNC-machined metal components and laser-cut acrylic panels.</li>
+        </ul>
+      </div>
+    </article>
+
+    <!-- ─ Academic 5 — Exoskeleton ─ -->
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Shoulder Joint and Harmony Exoskeleton — Mechanism Design &amp; Working Prototype</p>
+        <span class="entry-when">February, 2021</span>
+      </div>
+      <p class="entry-sub">
+        <a href="https://drive.google.com/file/d/1brWBERTa9KXhCcc-i8ntMxDyh_Oxmw5-/view" target="_blank" rel="noopener" style="text-decoration:underline;">CAD Model Demo</a>
+        <span class="pipe">|</span>
+        <a href="https://drive.google.com/file/d/1G-dXtOLStOF7FJCXPODBiBZG-QkIXGLP/view" target="_blank" rel="noopener" style="text-decoration:underline;">Prototype</a>
+        <span class="pipe">|</span>
+        <span>Advisor: Prof. Harish PM</span>
+      </p>
+
+      <div class="split" style="margin-top: 1rem;">
+        <ul class="bullets">
+          <li>Designed a 5-DOF shoulder exoskeleton mechanism that captured scapular rhythm — iterated joint geometry, linkage kinematics, and range-of-motion constraints through CAD across multiple configurations to balance mechanical complexity against anatomical fidelity; produced a working 3D-printed prototype validated through physical range-of-motion testing, with each design decision documented against the alternatives considered.</li>
+        </ul>
+
+        <div class="visual-rail">
+          <div class="slot" data-screen-label="Slot · Exoskeleton" style="aspect-ratio: 4/3;">
+            <div class="slot-body">
+              <span class="slot-kind" data-kind="3D">3D · Featured</span>
+              <span class="slot-name">5-DOF shoulder exoskeleton — scapular rhythm</span>
+              <span class="slot-aspect">4 : 3 · animated ROM</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─ Academic 6 — Umbrella holder ─ -->
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Umbrella Holder for Specially-abled Individuals</p>
+        <span class="entry-when">April, 2022</span>
+      </div>
+      <p class="entry-sub">
+        <a href="https://drive.google.com/file/d/1PMKWuZQ9cRLqbe_ZWzoutWbLmvWdJXxK/view" target="_blank" rel="noopener" style="text-decoration:underline;">Project Video</a>
+        <span class="pipe">|</span>
+        <span>Advisor: Prof. Harish PM</span>
+      </p>
+
+      <div class="split flip" style="margin-top: 1rem;">
+        <div class="visual-rail">
+          <div class="slot" data-screen-label="Slot · Umbrella holder" style="aspect-ratio: 1/1;">
+            <div class="slot-body">
+              <span class="slot-kind" data-kind="3D">3D</span>
+              <span class="slot-name">Wearable umbrella holder — anthropometric fit</span>
+              <span class="slot-aspect">1 : 1 · linear actuation</span>
+            </div>
+          </div>
+        </div>
+        <ul class="bullets">
+          <li>Designed and fabricated a wearable, hands-free umbrella holder for individuals with limited arm mobility — applied anthropometric measurements to determine fit parameters across the target user population, created CAD, and fabricated a lightweight mechanism with guided linear actuation; iterated on stability and load distribution within strict weight and wearability constraints imposed by the intended use case.</li>
+        </ul>
+      </div>
+    </article>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════
+       Positions of Responsibility (3)
+       ════════════════════════════════════════════════════════════ -->
+  <section id="por" class="section" data-screen-label="Positions of Responsibility">
+    <span class="section-num">04 · Positions of Responsibility</span>
+    <h2 class="section-title">Positions of<br /><span class="accent-line">Responsibility</span></h2>
+
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Welfare Secretary | Interim General Secretary | Interim Cultural Secretary</p>
+        <span class="entry-when">May, 2022 — April, 2023</span>
+      </div>
+      <p class="entry-sub"><span>Student Council, IIT Gandhinagar</span></p>
+
+      <div class="split" style="margin-top: 1rem;">
+        <ul class="bullets">
+          <li>Held Welfare Secretary, Interim General Secretary, and Interim Cultural Secretary concurrently — the only council member to carry all three; ran day-to-day operations for 2,000+ UG/PG students across hostels, mess, laundry, health services, and commercial outlets; coordinated a 25-member council as sole bridge between students and institute administration.</li>
+          <li><em>Designed a trial-based vendor selection system</em> for commercial outlets from scratch — ran 20+ vendor trials and onboarded 6 new outlets based on demonstrated performance and student feedback, not lowest bid; replaced a process that previously had no structured evaluation.</li>
+          <li>As Interim General Secretary: owned Convocation operations end-to-end for the Class of 2022 with a 68-member execution team; responsible for full live-day coordination and real-time issue resolution across all workstreams.</li>
+          <li>As Interim Cultural Secretary: led a 104-student contingent for the Inter-IIT Cultural Meet; managed logistics, team coordination, participation scheduling, and on-ground safety across the full event.</li>
+        </ul>
+
+        <div class="visual-rail">
+          <div class="slot" data-screen-label="Slot · Council" style="aspect-ratio: 4/3;">
+            <div class="slot-body">
+              <span class="slot-kind" data-kind="PHOTO">Photo</span>
+              <span class="slot-name">IITGN Welfare Council / Convocation 2022</span>
+              <span class="slot-aspect">4 : 3 · group / event</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Coordinator for Commercial Outlets</p>
+        <span class="entry-when">May, 2021 — April, 2022</span>
+      </div>
+      <p class="entry-sub"><span>Welfare Council, IIT Gandhinagar</span></p>
+
+      <ul class="bullets">
+        <li>Built a vendor candidate pipeline of 20+ operators across food and service categories — conducted independent on-ground outreach and capability assessments across national chains and regional operators before any formal trial.</li>
+        <li>Designed a competitive trial-and-selection system from scratch: ran simultaneous 1–2 day live campus trials for vendors in the same category, collected structured community feedback, and made selection decisions based on demonstrated performance — replacing a process with no prior evaluation standard.</li>
+        <li>Onboarded 6 new permanent and recurring outlets serving a 2,000+ student community — managed end-to-end vendor coordination, scheduling, and logistics across each launch from trial approval to operational go-live.</li>
+        <li>Organised multiple blood donation drive end-to-end — coordinated with GCRI and Ahmedabad Civil Hospital, managed 400+ registrations with slot-based crowd control, and collected blood units, the institute's highest post-pandemic yield.</li>
+      </ul>
+    </article>
+
+    <article class="entry">
+      <div class="entry-head">
+        <p class="entry-title">Co-Founder — Pegasus'20 (International Online Event)</p>
+        <span class="entry-when">September, 2020</span>
+      </div>
+      <p class="entry-sub"><span>Virtual Event during COVID-19</span></p>
+
+      <ul class="bullets">
+        <li>Co-founded and delivered Pegasus'20 end-to-end during COVID with a 30-member team; secured 5 sponsors + 3 gifting partners, managed INR 58K prize pool, and closed at INR 52K profit.</li>
+      </ul>
+    </article>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════
+       Other Extra-Curricular
+       ════════════════════════════════════════════════════════════ -->
+  <section id="extra" class="section" data-screen-label="Other Extra-Curricular">
+    <span class="section-num">04.b · Other Extra-Curricular</span>
+    <h2 class="section-title">Other<br /><span class="accent-line">Extra-Curricular</span></h2>
+
+    <ul class="bullets" style="margin-top: 0;">
+      <li>Events Coordinator — Amalthea '20, (Annual Technical Summit, IITGN) &nbsp;·&nbsp; <em style="background:none;color:var(--ink-soft);font-weight:500;">September, 2020 — May, 2021</em></li>
+      <li>Finance Coordinator — Events Team, Blithchron '21 (Annual Cultural Fest, IITGN) &nbsp;·&nbsp; <em style="background:none;color:var(--ink-soft);font-weight:500;">August, 2020 — February, 2021</em></li>
+      <li>Event Management Executive — Blithchron '20 (Annual Cultural Fest, IITGN) &nbsp;·&nbsp; <em style="background:none;color:var(--ink-soft);font-weight:500;">September, 2019 — February, 2020</em></li>
+      <li>Event Management Executive — Amalthea '19 (Annual Technical Summit, IITGN) &nbsp;·&nbsp; <em style="background:none;color:var(--ink-soft);font-weight:500;">August, 2019 — October, 2019</em></li>
+    </ul>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════
+       Achievements & Recognition
+       ════════════════════════════════════════════════════════════ -->
+  <section id="awards" class="section" data-screen-label="Achievements & Recognition">
+    <span class="section-num">05 · Achievements &amp; Recognition</span>
+    <h2 class="section-title">Achievements &amp;<br /><span class="accent-line">Recognition</span></h2>
+
+    <div class="split">
+      <ul class="bullets">
+        <li><strong>Gold Medalist — Outstanding Social Service (IITGN, Convocation 2023)</strong> — institute Gold Medal for contribution to student welfare, campus operations, and community leadership.</li>
+        <li><strong>ANCHORS ELITE (Q2 FY25)</strong> — selected among 51 employees across Axis Bank pan-India for exceptional impact and delivery.</li>
+        <li><strong>ANCHORS TEAM PLAYER (Q2 FY25)</strong> — awarded for high-ownership collaboration and cross-team execution under pressure.</li>
+        <li><strong>BIU Team Award</strong> — recognised for end-to-end delivery of the profit score automation program with TCS.</li>
+        <li><strong>Agile &amp; Jira adoption lead</strong> — part of a 6-member SWAT team driving Jira rollout and Agile project management adoption across the Data Science vertical and cross-functional teams.</li>
+        <li><strong>Dean's List</strong> — Semester 4, 2021; awarded to meritorious students.</li>
+        <li><strong>Winner — Rube Goldberg Machine Building Competition</strong> (Amalthea, IITGN, 2020) — 1st place for designing and executing a chain-reaction machine under competition constraints.</li>
+        <li>Top internal technical assessments — L3 in SQL and PySpark (Q4 FY25); L2 in Functional Assessment.</li>
+        <li>Competitive sports medals in Rope Skipping — 3 Gold (State SGFI), 2 Silver (CBSE Nationals), selected for National RSFI championship.</li>
+      </ul>
+
+      <div class="visual-rail">
+        <div class="slot accent" data-screen-label="Slot · Gold medal" style="aspect-ratio: 1/1;">
+          <div class="slot-body">
+            <span class="slot-kind" data-kind="3D">3D</span>
+            <span class="slot-name">Gold medal — Outstanding Social Service</span>
+            <span class="slot-aspect">1 : 1 · rotating medallion</span>
+          </div>
+        </div>
+        <div class="slot" data-screen-label="Slot · Medals stack" style="aspect-ratio: 4/3;">
+          <div class="slot-body">
+            <span class="slot-kind" data-kind="3D">3D</span>
+            <span class="slot-name">Medals stack — SGFI / CBSE / RSFI</span>
+            <span class="slot-aspect">4 : 3 · stacked grouping</span>
+          </div>
+        </div>
+        <div class="slot dark" data-screen-label="Slot · Rube Goldberg" style="aspect-ratio: 4/3;">
+          <div class="slot-body">
+            <span class="slot-kind" data-kind="ANIM">Animation</span>
+            <span class="slot-name">Rube Goldberg machine — chain reaction loop</span>
+            <span class="slot-aspect">4 : 3 · looping motion</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════
+       Skill Summary
+       ════════════════════════════════════════════════════════════ -->
+  <section id="skills" class="section" data-screen-label="Skill Summary">
+    <span class="section-num">06 · Skill Summary</span>
+    <h2 class="section-title">Skill<br /><span class="accent-line">Summary</span></h2>
+
+    <div class="skill-group">
+      <span class="h">Operations &amp; Program Management</span>
+      <div class="tags">
+        <span class="skill-tag">Cross-functional Program Management</span>
+        <span class="skill-tag">Strategic Planning</span>
+        <span class="skill-tag">Vendor Management</span>
+        <span class="skill-tag">Process Design &amp; SOPs</span>
+        <span class="skill-tag">Change Management</span>
+        <span class="skill-tag">Executive Stakeholder Reporting</span>
+        <span class="skill-tag">Root Cause Analysis</span>
+      </div>
+    </div>
+
+    <div class="skill-group">
+      <span class="h">Engineering &amp; Hardware</span>
+      <div class="tags">
+        <span class="skill-tag">Autodesk Fusion 360</span>
+        <span class="skill-tag">Autodesk Inventor Professional</span>
+        <span class="skill-tag">MATLAB</span>
+        <span class="skill-tag">Arduino</span>
+        <span class="skill-tag">LT-Spice</span>
+      </div>
+    </div>
+
+    <div class="skill-group">
+      <span class="h">Delivery &amp; DevOps</span>
+      <div class="tags">
+        <span class="skill-tag">Jenkins CI/CD</span>
+        <span class="skill-tag">BitBucket</span>
+        <span class="skill-tag">Jira (Agile)</span>
+        <span class="skill-tag">Microsoft Excel</span>
+      </div>
+    </div>
+
+    <div class="skill-group">
+      <span class="h">Data &amp; Languages</span>
+      <div class="tags">
+        <span class="skill-tag">Generative AI Tools</span>
+        <span class="skill-tag">SQL</span>
+        <span class="skill-tag">PySpark (SparkSQL)</span>
+        <span class="skill-tag">Python (data processing &amp; scripting)</span>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer" data-screen-label="Footer · Contact">
+  <div class="footer-grid">
+    <h2>Open to <em>product &amp; program operations</em> at hardware-first companies.</h2>
+    <div class="links">
+      <a href="mailto:adarsh.g@iitgn.ac.in">
+        <span class="k">Email</span>
+        <span class="v">adarsh.g@iitgn.ac.in</span>
+      </a>
+      <a href="tel:+918602772536">
+        <span class="k">Phone</span>
+        <span class="v">+91 8602 772 536</span>
+      </a>
+      <a href="https://www.linkedin.com/in/adarsh-golait/" target="_blank" rel="noopener">
+        <span class="k">LinkedIn</span>
+        <span class="v">adarsh-golait</span>
+      </a>
+      <a href="#hero">
+        <span class="k">Top</span>
+        <span class="v">↑ Return to hero</span>
+      </a>
+    </div>
+    <div class="colophon">
+      <span>Adarsh Golait · Mumbai, IN</span>
+      <span>Portfolio · 2026</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // ─── Scroll-spy: highlight nav link of the section currently in view ───
+  (function () {
+    const navLinks = document.querySelectorAll('.nav a[data-section]');
+    const linkBySection = new Map();
+    navLinks.forEach(a => linkBySection.set(a.dataset.section, a));
+
+    // mapping — multiple section ids → which nav link to highlight
+    const sectionToNav = {
+      summary:    null,
+      education:  'education',
+      experience: 'experience',
+      corporate:  'corporate',
+      academic:   'corporate',
+      por:        'por',
+      extra:      'por',
+      awards:     'awards',
+      skills:     'skills',
+    };
+
+    const targets = Object.keys(sectionToNav)
+      .map(id => document.getElementById(id))
+      .filter(Boolean);
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        const id = entry.target.id;
+        const wantNav = sectionToNav[id];
+        navLinks.forEach(a => a.classList.remove('is-active'));
+        if (wantNav && linkBySection.has(wantNav)) {
+          linkBySection.get(wantNav).classList.add('is-active');
+        }
+      });
+    }, {
+      // Section is "active" when its top crosses the upper third of the viewport
+      rootMargin: '-32% 0px -60% 0px',
+      threshold: 0,
+    });
+
+    targets.forEach(t => observer.observe(t));
+  })();
+</script>
+
+</body>
+</html>

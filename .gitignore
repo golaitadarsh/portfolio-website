@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+
+# os / editor
+.DS_Store
+.vscode/
+*.local
+
+# tooling
+.playwright-mcp/
+.agents/
+.claude/
+
+# scratch / demo files
+character.ts
+hero-demo.html
+skills-lock.json
+
+# scratch / artifacts
+*.zip
+*.png
+*.pdf
+*.tex
+!assets/**/*.png
+!public/**/*.png

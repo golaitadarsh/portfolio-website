@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Leadership — Adarsh Golait</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="shared.css" />
+  <style>
+    /* ─── flagship role: welfare secretary ─── */
+    .flagship {
+      padding: clamp(3rem, 6vh, 5rem) var(--gutter-x);
+      border-bottom: 1px solid var(--rule);
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+      gap: clamp(2rem, 5vw, 4rem);
+      align-items: start;
+    }
+    @media (max-width: 980px) { .flagship { grid-template-columns: 1fr; } }
+
+    .flag-left .kicker { margin-bottom: 1rem; }
+    .flag-left .roles-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .flag-left .roles-stack .r {
+      font: 800 clamp(1.5rem, 3.2vw, 2.4rem)/1.05 var(--f-sans);
+      letter-spacing: -0.025em;
+      text-transform: uppercase;
+    }
+    .flag-left .roles-stack .r:nth-child(2) { color: var(--ink-soft); }
+    .flag-left .roles-stack .r:nth-child(3) { color: var(--ink-faint); }
+    .flag-left .roles-stack .r em {
+      font-style: normal;
+      background: var(--accent);
+      padding: 0 0.1em;
+    }
+    .flag-left .org {
+      display: flex;
+      gap: 0.75rem;
+      align-items: baseline;
+      padding: 1rem 0;
+      border-top: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+      margin-bottom: 1.25rem;
+    }
+    .flag-left .org .k {
+      font: 500 0.62rem/1 var(--f-mono);
+      letter-spacing: 0.18em;
+      color: var(--ink-faint);
+      text-transform: uppercase;
+      min-width: 6rem;
+    }
+    .flag-left .org .v {
+      font: 600 0.92rem/1.3 var(--f-sans);
+      letter-spacing: -0.005em;
+    }
+    .flag-left .summary {
+      font: 400 clamp(1rem, 1.2vw, 1.08rem)/1.6 var(--f-sans);
+      color: var(--ink-soft);
+      max-width: 56ch;
+      text-wrap: pretty;
+    }
+
+    /* impact callouts on the right */
+    .flag-right {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .callout {
+      padding: clamp(1.25rem, 2.5vh, 1.75rem);
+      border: 1px solid var(--rule);
+      background: var(--paper);
+    }
+    .callout.dark { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+    .callout .k {
+      font: 500 0.62rem/1 var(--f-mono);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      margin-bottom: 0.6rem;
+    }
+    .callout.dark .k { color: rgba(255,255,255,0.55); }
+    .callout .v {
+      font: 900 clamp(2rem, 4vw, 2.8rem)/1 var(--f-sans);
+      letter-spacing: -0.04em;
+      margin-bottom: 0.5rem;
+    }
+    .callout .v small {
+      font-size: 0.4em;
+      vertical-align: 0.8em;
+      color: var(--ink-soft);
+      font-weight: 500;
+    }
+    .callout.dark .v small { color: rgba(255,255,255,0.55); }
+    .callout .desc {
+      font: 400 0.85rem/1.5 var(--f-sans);
+      color: var(--ink-soft);
+    }
+    .callout.dark .desc { color: rgba(255,255,255,0.72); }
+
+    .callout-pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    @media (max-width: 520px) { .callout-pair { grid-template-columns: 1fr; } }
+
+    /* tri-roles stack — each interim role */
+    .interim-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+    }
+    .interim {
+      padding: clamp(1.5rem, 3vh, 2.25rem) clamp(1.25rem, 2.5vw, 2rem);
+    }
+    .interim + .interim { border-left: 1px solid var(--rule); }
+    @media (max-width: 880px) {
+      .interim-row { grid-template-columns: 1fr; }
+      .interim + .interim { border-left: 0; border-top: 1px solid var(--rule); }
+    }
+    .interim .num {
+      font: 500 0.62rem/1 var(--f-mono);
+      letter-spacing: 0.18em;
+      color: var(--ink-faint);
+      text-transform: uppercase;
+      margin-bottom: 0.75rem;
+      display: block;
+    }
+    .interim h4 {
+      font: 800 1.05rem/1.2 var(--f-sans);
+      letter-spacing: -0.015em;
+      text-transform: uppercase;
+      margin-bottom: 0.6rem;
+    }
+    .interim p {
+      font: 400 0.88rem/1.55 var(--f-sans);
+      color: var(--ink-soft);
+    }
+
+    /* ─── secondary roles ─── */
+    .role-row {
+      display: grid;
+      grid-template-columns: 9rem minmax(0, 1fr) auto;
+      gap: clamp(1.5rem, 3vw, 3rem);
+      padding: clamp(2.25rem, 5vh, 3.5rem) var(--gutter-x);
+      border-bottom: 1px solid var(--rule);
+      align-items: start;
+    }
+    @media (max-width: 720px) {
+      .role-row { grid-template-columns: 1fr; gap: 1rem; }
+    }
+    .role-row .ix {
+      font: 500 0.62rem/1 var(--f-mono);
+      letter-spacing: 0.18em;
+      color: var(--ink-faint);
+      text-transform: uppercase;
+      padding-top: 0.4rem;
+    }
+    .role-row .body {
+      min-width: 0;
+    }
+    .role-row .body .org-line {
+      font: 500 0.7rem/1 var(--f-mono);
+      letter-spacing: 0.18em;
+      color: var(--ink-faint);
+      text-transform: uppercase;
+      margin-bottom: 0.6rem;
+    }
+    .role-row .body h3 {
+      font: 800 clamp(1.2rem, 2vw, 1.55rem)/1.1 var(--f-sans);
+      letter-spacing: -0.02em;
+      margin-bottom: 0.85rem;
+      max-width: 32ch;
+    }
+    .role-row .body p {
+      font: 400 0.92rem/1.55 var(--f-sans);
+      color: var(--ink-soft);
+      max-width: 68ch;
+      text-wrap: pretty;
+    }
+    .role-row .body .impact-strip {
+      margin-top: 1rem;
+      display: flex;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+      padding-top: 0.85rem;
+      border-top: 1px solid var(--rule);
+    }
+    .role-row .body .impact-strip .it {
+      display: flex; flex-direction: column; gap: 0.2rem;
+    }
+    .role-row .body .impact-strip .it .v {
+      font: 800 1rem/1 var(--f-sans);
+      letter-spacing: -0.02em;
+    }
+    .role-row .body .impact-strip .it .k {
+      font: 500 0.58rem/1 var(--f-mono);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+    .role-row .when {
+      font: 500 0.78rem/1.4 var(--f-mono);
+      color: var(--ink);
+      padding-top: 0.4rem;
+      text-align: right;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+    @media (max-width: 720px) {
+      .role-row .when { text-align: left; }
+    }
+
+    /* extra-curricular log */
+    .log {
+      padding: clamp(2.5rem, 5vh, 4rem) var(--gutter-x);
+    }
+    .log h3 {
+      font: 500 0.7rem/1 var(--f-mono);
+      letter-spacing: 0.2em;
+      color: var(--ink-faint);
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+    }
+    .log table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .log td, .log th {
+      padding: 1rem 0.5rem;
+      vertical-align: baseline;
+      border-bottom: 1px solid var(--rule);
+      text-align: left;
+    }
+    .log thead th {
+      font: 500 0.58rem/1 var(--f-mono);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      padding-bottom: 0.6rem;
+    }
+    .log .role-cell {
+      font: 600 0.95rem/1.35 var(--f-sans);
+      letter-spacing: -0.005em;
+    }
+    .log .org-cell {
+      font: 400 0.88rem/1.4 var(--f-sans);
+      color: var(--ink-soft);
+    }
+    .log .date-cell {
+      font: 500 0.78rem/1 var(--f-mono);
+      color: var(--ink-faint);
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    @media (max-width: 640px) {
+      .log table, .log tbody, .log thead, .log tr { display: block; }
+      .log thead { display: none; }
+      .log tr { padding: 1rem 0; border-bottom: 1px solid var(--rule); }
+      .log td { display: block; padding: 0.2rem 0; border-bottom: 0; }
+    }
+  </style>
+</head>
+<body data-screen-label="Leadership">
+
+<header class="topbar">
+  <a href="index.html" class="brand">
+    <span class="brand-dot"></span>
+    ADARSH GOLAIT
+    <span class="brand-sub">— Portfolio</span>
+  </a>
+  <nav class="nav" aria-label="Primary">
+    <a href="education.html"><span class="nav-num">01</span><span class="nav-label">Education</span></a>
+    <a href="experience.html"><span class="nav-num">02</span><span class="nav-label">Experience</span></a>
+    <a href="projects.html"><span class="nav-num">03</span><span class="nav-label">Projects</span></a>
+    <a href="pors.html" aria-current="page"><span class="nav-num">04</span><span class="nav-label">Leadership</span></a>
+    <a href="achievements.html"><span class="nav-num">05</span><span class="nav-label">Recognition</span></a>
+  </nav>
+</header>
+
+<main>
+  <section class="page-head">
+    <div class="meta">
+      <span><span class="num">04</span> / Positions of Responsibility</span>
+      <span>IIT Gandhinagar · 2019—2023</span>
+    </div>
+    <h1>The bridge<br />between<br /><span class="accent-line">2,000 students</span></h1>
+    <p class="lede">
+      Three concurrent council roles, a 25-member team, and a community of 2,000+ undergraduates. Replaced an unstructured vendor selection process with a trial-based system, ran convocation for the Class of 2022 with a 68-member execution team, and led a 104-student contingent for Inter-IIT Cultural Meet — all in a single year.
+    </p>
+  </section>
+
+  <!-- ───── FLAGSHIP ───── -->
+  <section class="flagship">
+    <div class="flag-left">
+      <span class="kicker">04.A · Flagship · Sole bridge between students &amp; administration</span>
+      <div class="roles-stack">
+        <span class="r"><em>Welfare Secretary</em></span>
+        <span class="r">Interim General Secretary</span>
+        <span class="r">Interim Cultural Secretary</span>
+      </div>
+      <div class="org">
+        <span class="k">Organisation</span>
+        <span class="v">Student Council · IIT Gandhinagar</span>
+      </div>
+      <div class="org">
+        <span class="k">Tenure</span>
+        <span class="v">May 2022 — April 2023</span>
+      </div>
+      <p class="summary">
+        Held three concurrent council roles — the only council member to carry all three simultaneously. Ran day-to-day operations for 2,000+ UG/PG students across hostels, mess, laundry, health services, and commercial outlets. Coordinated a 25-member council as the sole bridge between the student community and institute administration. Designed and ran a trial-based vendor selection system from scratch, replacing an unstructured legacy approach that had no prior evaluation standard.
+      </p>
+    </div>
+
+    <div class="flag-right">
+      <div class="callout dark">
+        <span class="k">Community served</span>
+        <span class="v">2,000<small>+ UG/PG students</small></span>
+        <p class="desc">Across hostels, mess, laundry, health services, and commercial outlets — sole operational bridge to institute administration.</p>
+      </div>
+      <div class="callout-pair">
+        <div class="callout">
+          <span class="k">Vendor trials</span>
+          <span class="v">20<small>+</small></span>
+          <p class="desc">Live campus trials run; 6 new outlets onboarded on demonstrated performance, not lowest bid.</p>
+        </div>
+        <div class="callout">
+          <span class="k">Council</span>
+          <span class="v">25</span>
+          <p class="desc">Members coordinated across hostels, mess, health, outlets, welfare workstreams.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───── INTERIM ROLES TRIO ───── -->
+  <div class="interim-row">
+    <div class="interim">
+      <span class="num">01 · Welfare Secretary</span>
+      <h4>Vendor system rebuild</h4>
+      <p>Designed a trial-based vendor selection process from scratch. Ran 20+ vendor trials and onboarded 6 new commercial outlets on demonstrated performance + structured student feedback — replacing a process with no prior evaluation standard.</p>
+    </div>
+    <div class="interim">
+      <span class="num">02 · Interim Gen. Sec.</span>
+      <h4>Convocation Class of 2022</h4>
+      <p>Owned end-to-end Convocation operations with a 68-member execution team. Responsible for full live-day coordination and real-time issue resolution across all workstreams — programme, hospitality, logistics, AV, guest management.</p>
+    </div>
+    <div class="interim">
+      <span class="num">03 · Interim Cult. Sec.</span>
+      <h4>Inter-IIT Cultural Meet</h4>
+      <p>Led a 104-student contingent for the Inter-IIT Cultural Meet. Managed logistics, team coordination, participation scheduling, and on-ground safety across the full event from departure to return.</p>
+    </div>
+  </div>
+
+  <!-- ───── COORDINATOR ROLE ───── -->
+  <article class="role-row">
+    <span class="ix">04.B</span>
+    <div class="body">
+      <p class="org-line">Welfare Council · IIT Gandhinagar</p>
+      <h3>Coordinator for Commercial Outlets</h3>
+      <p>
+        Built a vendor candidate pipeline of 20+ operators across food and service categories — conducted independent on-ground outreach and capability assessments across national chains and regional operators before any formal trial. Designed a competitive trial-and-selection system from scratch: ran simultaneous 1–2 day live campus trials in the same category, collected structured community feedback, and made selection decisions based on demonstrated performance. Organised multiple blood donation drives end-to-end with GCRI and Ahmedabad Civil Hospital — managed 400+ registrations with slot-based crowd control, the institute's highest post-pandemic yield.
+      </p>
+      <div class="impact-strip">
+        <div class="it"><span class="v">20+</span><span class="k">Vendors in pipeline</span></div>
+        <div class="it"><span class="v">6</span><span class="k">Outlets onboarded</span></div>
+        <div class="it"><span class="v">400+</span><span class="k">Blood drive registrations</span></div>
+        <div class="it"><span class="v">#1</span><span class="k">Post-pandemic yield</span></div>
+      </div>
+    </div>
+    <span class="when">May 2021<br />— Apr 2022</span>
+  </article>
+
+  <!-- ───── PEGASUS '20 ───── -->
+  <article class="role-row">
+    <span class="ix">04.C</span>
+    <div class="body">
+      <p class="org-line">Pegasus'20 · International Online Event</p>
+      <h3>Co-Founder — virtual event during COVID-19</h3>
+      <p>
+        Co-founded and delivered Pegasus'20 end-to-end during COVID with a 30-member team. Secured 5 sponsors plus 3 gifting partners; managed an INR 58K prize pool; closed at INR 52K profit. First-ever international online event organised from scratch during peak pandemic constraints.
+      </p>
+      <div class="impact-strip">
+        <div class="it"><span class="v">30</span><span class="k">Team members</span></div>
+        <div class="it"><span class="v">8</span><span class="k">Partners secured</span></div>
+        <div class="it"><span class="v">₹52K</span><span class="k">Profit closed</span></div>
+      </div>
+    </div>
+    <span class="when">September 2020</span>
+  </article>
+
+  <!-- ───── LOG ───── -->
+  <section class="log">
+    <h3>04.D · Other Extra-Curricular Roles</h3>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 38%;">Role</th>
+          <th style="width: 42%;">Organisation</th>
+          <th style="width: 20%;">Period</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="role-cell">Events Coordinator</td>
+          <td class="org-cell">Amalthea '20 — Annual Technical Summit, IITGN</td>
+          <td class="date-cell">Sep 2020 — May 2021</td>
+        </tr>
+        <tr>
+          <td class="role-cell">Finance Coordinator, Events Team</td>
+          <td class="org-cell">Blithchron '21 — Annual Cultural Fest, IITGN</td>
+          <td class="date-cell">Aug 2020 — Feb 2021</td>
+        </tr>
+        <tr>
+          <td class="role-cell">Event Management Executive</td>
+          <td class="org-cell">Blithchron '20 — Annual Cultural Fest, IITGN</td>
+          <td class="date-cell">Sep 2019 — Feb 2020</td>
+        </tr>
+        <tr>
+          <td class="role-cell">Event Management Executive</td>
+          <td class="org-cell">Amalthea '19 — Annual Technical Summit, IITGN</td>
+          <td class="date-cell">Aug 2019 — Oct 2019</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+</main>
+
+<nav class="page-foot" aria-label="Page navigation">
+  <a href="projects.html" class="prev">
+    <div class="dir">← Previous</div>
+    <div class="label"><span class="num">03</span>Projects</div>
+  </a>
+  <a href="achievements.html" class="next">
+    <div class="dir">Next →</div>
+    <div class="label">Recognition<span class="num">05</span></div>
+  </a>
+</nav>
+
+</body>
+</html>
