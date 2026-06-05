@@ -75,15 +75,23 @@ onMounted(() => {
     handleMouseMove(event, (x, y) => (mouse = { x, y }));
   };
   let touchTimer: number | undefined;
-  const onTouchStart = (event: TouchEvent) => {
-    const el = event.target as HTMLElement;
+  // Single, removable touchmove handler — gated by `touchTracking`, which the
+  // start-timer flips on after the 200ms hold. Previously a fresh anonymous
+  // listener was added on every touchstart and never removed, leaking one
+  // listener (and closure) per touch and surviving component teardown.
+  let touchTracking = false;
+  const onTouchMove = (e: TouchEvent) => {
+    if (!touchTracking) return;
+    handleTouchMove(e, (x, y) => (mouse = { x, y }));
+  };
+  const onTouchStart = () => {
     touchTimer = window.setTimeout(() => {
-      el?.addEventListener("touchmove", (e: TouchEvent) =>
-        handleTouchMove(e, (x, y) => (mouse = { x, y }))
-      );
+      touchTracking = true;
     }, 200);
   };
   const onTouchEndEv = () => {
+    clearTimeout(touchTimer);
+    touchTracking = false;
     handleTouchEnd((x, y, ix, iy) => {
       mouse = { x, y };
       interpolation = { x: ix, y: iy };
@@ -99,6 +107,7 @@ onMounted(() => {
 
   document.addEventListener("mousemove", onMouseMove);
   container.addEventListener("touchstart", onTouchStart);
+  container.addEventListener("touchmove", onTouchMove);
   container.addEventListener("touchend", onTouchEndEv);
   window.addEventListener("resize", onResize);
 
@@ -150,6 +159,7 @@ onMounted(() => {
     clearTimeout(touchTimer);
     document.removeEventListener("mousemove", onMouseMove);
     container.removeEventListener("touchstart", onTouchStart);
+    container.removeEventListener("touchmove", onTouchMove);
     container.removeEventListener("touchend", onTouchEndEv);
     window.removeEventListener("resize", onResize);
     hoverCleanup?.();

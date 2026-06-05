@@ -463,15 +463,23 @@ function maybeEngageDoorLock(wheelDy = 0) {
   // distToEntry > 0 → scrolled past the door entry (down into the runway);
   // < 0 → still above it. Door entry is where hero-zoom finishes.
   const distToEntry = g.scrolled - g.heroBudgetPx
-  doorVisibleRef.value = heroProgress >= doorConfig.heroDoneAt * 0.6
-  if (heroProgress < doorConfig.heroDoneAt || doorLocked) return
+  // Gate on SCROLL POSITION, not the lerped heroProgress. The visual zoom
+  // (heroProgress) lags scroll by ~10 frames via its smoothing lerp; gating the
+  // door lock on it meant a fast wheel notch could carry native scroll 300–500px
+  // PAST the entry before heroProgress caught up to heroDoneAt — the page
+  // "leaked" past the frozen stage with the doors still shut, then snapped back
+  // jarringly once the lerp arrived. atEntry is position-derived (no lag), so the
+  // lock fires the instant scroll reaches the entry, killing the leak.
+  const atEntry = distToEntry >= -DOOR_ENTRY_EPS
+  doorVisibleRef.value = heroProgressTarget >= doorConfig.heroDoneAt * 0.6
+  if (doorLocked) return
   const doorsClosed = doorAccum <= 0.001 && doorDwell <= 0.001
   const canOpenMore  = doorAccum < doorConfig.wheelTotal || doorDwell < doorConfig.dwellTotal
   const canCloseMore = doorAccum > 0 || doorDwell > 0
   // Forward (wheel down): the moment scroll reaches/passes the entry while the
   // doors are still shut, grab the lock and snap exactly to the entry — even
   // if a fast flick overshot — so the split always plays from the top.
-  if (wheelDy > 0 && doorsClosed && canOpenMore && distToEntry >= -DOOR_ENTRY_EPS) {
+  if (wheelDy > 0 && doorsClosed && canOpenMore && atEntry) {
     snapToDoorEntry(distToEntry)
     doorLocked = true
     return
@@ -479,6 +487,15 @@ function maybeEngageDoorLock(wheelDy = 0) {
   // Reverse (wheel up): native scroll first carries the user back up toward the
   // entry; once within range with the doors still open, re-take the lock and
   // snap to the entry so the close animation is anchored to the door stage.
+  //
+  // wheelDy < 0 fires on a real wheel-up AND on the passive scroll listener
+  // when it detects upward scroll (it now passes dir = -1, not 0). Without the
+  // scroll-driven path, a fast wheel-up flick after the doors opened let native
+  // scroll sail up through the entry between wheel frames while the doors stayed
+  // stuck fully open (door-progress frozen at 1). The scroll handler now catches
+  // the reverse the moment the page comes back within range, regardless of
+  // wheel cadence. Downward scroll passes dir = +1 so leaving into the summary
+  // never re-locks here.
   if (wheelDy < 0 && canCloseMore && distToEntry <= DOOR_ENTRY_EPS) {
     snapToDoorEntry(distToEntry)
     doorLocked = true
@@ -524,9 +541,18 @@ function onDoorWheel(e: WheelEvent) {
   if (doorRafId === null) doorRafId = requestAnimationFrame(doorLoop)
 }
 
+let lastDoorScrollY = typeof window !== 'undefined' ? window.scrollY : 0
 function onDoorScroll() {
+  // Derive scroll direction so the engage check can tell "scrolling down away
+  // from open doors" (must NOT re-lock — user is leaving into the summary)
+  // from "scrolling back up toward open doors" (must re-lock and close them).
+  // The passive scroll listener has no wheel delta of its own, so we synthesise
+  // the sign from the scroll position change.
+  const y = window.scrollY
+  const dir = y < lastDoorScrollY ? -1 : y > lastDoorScrollY ? 1 : 0
+  lastDoorScrollY = y
   // Outside the lock, just keep visibility flag fresh + watch for engage.
-  maybeEngageDoorLock()
+  maybeEngageDoorLock(dir)
 }
 
 function doorLoop() {
@@ -676,6 +702,7 @@ onBeforeUnmount(() => {
   doorLocked = false
   doorProgress = 0
   doorProgressTarget = 0
+  lastDoorScrollY = 0
   doorProgressRef.value = 0
   doorVisibleRef.value = false
   characterDoorRef.value = false
@@ -812,7 +839,7 @@ onBeforeUnmount(() => {
 
         <!-- Page 1 (on top) — transformed into the 4:5 slot on scroll -->
         <section id="hero" ref="heroPage1Ref" class="hs-page1">
-          <HeroSection :show-topbar="false" scroll-cue-target="#character-reveal" />
+          <HeroSection :show-topbar="false" :scroll-cue-link="false" />
         </section>
 
         <!-- Signature pen-draw — sibling of page-1/page-2 so it stacks above
@@ -1577,7 +1604,7 @@ onBeforeUnmount(() => {
    PORTFOLIO single-page styles
    Tokens + .section/.entry/.bullets/.tag/.slot/.kicker come from global style.css.
    This file owns: portfolio-topbar overrides, #hero overlay, #intro-message,
-   #character-reveal, #summary, .split/.visual-rail, .edu-strip, #skills, .footer,
+   the door/character stage, #summary, .split/.visual-rail, .edu-strip, #skills, .footer,
    .accent-line, .pipe.
    ============================================================ */
 

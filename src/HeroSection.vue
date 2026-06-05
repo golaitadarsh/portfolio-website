@@ -10,10 +10,16 @@ const DotField = defineAsyncComponent(() => import('./components/dot-field/DotFi
 interface Props {
   showTopbar?: boolean
   scrollCueTarget?: string
+  // When false, the scroll cue renders as a non-interactive visual hint (no
+  // anchor). Used by the portfolio embed, where the "next section" is the
+  // scroll-driven door reveal — not a section you can hash-jump to. On the
+  // standalone home route the cue stays a real link to #home-content.
+  scrollCueLink?: boolean
 }
 const props = withDefaults(defineProps<Props>(), {
   showTopbar: true,
   scrollCueTarget: '#home-content',
+  scrollCueLink: true,
 })
 
 const container = ref<HTMLElement | null>(null)
@@ -642,12 +648,19 @@ onMounted(() => {
         </h1>
       </div>
 
-      <a :href="props.scrollCueTarget" class="scroll-cue" aria-label="Scroll to next section">
+      <component
+        :is="props.scrollCueLink ? 'a' : 'div'"
+        :href="props.scrollCueLink ? props.scrollCueTarget : undefined"
+        class="scroll-cue"
+        :class="{ 'scroll-cue--static': !props.scrollCueLink }"
+        :aria-label="props.scrollCueLink ? 'Scroll to next section' : undefined"
+        :aria-hidden="props.scrollCueLink ? undefined : 'true'"
+      >
         <span class="scroll-cue-label">Scroll</span>
         <span class="scroll-cue-track">
           <span class="scroll-cue-bead"></span>
         </span>
-      </a>
+      </component>
     </div>
   </div>
 </template>
@@ -864,6 +877,11 @@ onMounted(() => {
   gap: 0.7rem;
   text-decoration: none;
   color: var(--ink);
+}
+/* Static variant (portfolio embed) — pure visual hint, not clickable. */
+.scroll-cue.scroll-cue--static {
+  pointer-events: none;
+  cursor: default;
 }
 .scroll-cue-label {
   font: 500 0.62rem/1 var(--f-mono);
