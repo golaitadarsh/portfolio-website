@@ -246,6 +246,15 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   .page-foot { grid-template-columns: 1fr; }
   .page-foot a + a { border-left: 0; border-top: 1px solid var(--rule); }
 }
+@media (max-width: 720px) {
+  /* Entry header: date column drops next to the title and stacks under it —
+     the auto column otherwise refuses to wrap long date strings and pushes
+     the layout past the viewport. */
+  .entry-head {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+  }
+}
 
 /* ───── helpers ───── */
 .section-block { padding: clamp(2.5rem, 6vh, 4.5rem) var(--gutter-x); }
@@ -266,6 +275,13 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   text-align: center;
   padding: clamp(1rem, 2.5vw, 1.5rem);
   min-height: 200px;
+  /* Pin width to the column. Slots carry inline aspect-ratio + min-height;
+     without an explicit width the ratio wins and the box grows sideways
+     (min-height × ratio), overflowing narrow columns on mobile and dragging
+     the page wider than the viewport. With width pinned, the ratio yields
+     and the slot just renders taller. */
+  width: 100%;
+  max-width: 100%;
 }
 .slot::before {
   content: '';

@@ -43,9 +43,20 @@ const characterVisible = ref(false)
 //   endContrast   · contrast at fully-zoomed.
 //   smoothing     · 0..1, lerp factor per frame; smaller = silkier (slower catchup).
 // ────────────────────────────────────────────────────────────────────
-// Slot aspect for landed Page-1. Landscape 3:2 by default; change to taste
-// (e.g. 16/10, 4/3). Slot rect on Page-2 is also forced to this ratio.
-const HERO_SLOT_AR = 24 / 14
+// Slot aspect for landed Page-1. Landscape on desktop; portrait on compact
+// (phone) viewports, where a landscape crop of the portrait hero photo
+// reduces to an eye-strip. Must match the .im-frame aspect-ratio media query.
+const HERO_SLOT_AR_WIDE    = 24 / 14
+const HERO_SLOT_AR_COMPACT = 3 / 4
+
+function isCompactViewport() {
+  return typeof window !== 'undefined' &&
+    window.matchMedia('(max-width: 720px)').matches
+}
+
+function heroSlotAR() {
+  return isCompactViewport() ? HERO_SLOT_AR_COMPACT : HERO_SLOT_AR_WIDE
+}
 
 // ────────────────────────────────────────────────────────────────────
 // LEVERS — tweak these to change everything about the hero zoom feel.
@@ -256,7 +267,7 @@ function applyHeroTransform(force = false) {
   // motion from the camera push — adds physical-camera realism.
   const easedCrop = easeInOutQuint(Math.max(0, t - heroZoom.cropLag) / (1 - heroZoom.cropLag))
 
-  const targetAR = HERO_SLOT_AR
+  const targetAR = heroSlotAR()
   const cropW = Math.min(heroVpW, heroVpH * targetAR)
   const cropH = cropW / targetAR
 
@@ -264,9 +275,12 @@ function applyHeroTransform(force = false) {
 
   // visibleW/H = the trimmed window that lands exactly inside the slot.
   // Dividing by characterSize > 1 enlarges the character at landing (smaller
-  // visible source × larger scale = bigger image inside the slot).
-  const visibleW = cropW / heroZoom.characterSize
-  const visibleH = cropH / heroZoom.characterSize
+  // visible source × larger scale = bigger image inside the slot). On compact
+  // viewports the source render is already a tight portrait crop, so the
+  // desktop zoom factor over-magnifies — keep it near 1 there.
+  const charSize = isCompactViewport() ? 1.05 : heroZoom.characterSize
+  const visibleW = cropW / charSize
+  const visibleH = cropH / charSize
 
   const scaleEnd = slotW / visibleW
 
@@ -383,9 +397,14 @@ function stageGeom() {
   const stickyH = sticky?.clientHeight || window.innerHeight
   const travel = Math.max(1, driver.clientHeight - stickyH)
   const scrolled = Math.min(travel, Math.max(0, -rect.top))
-  const vh = window.innerHeight / 100
-  const heroBudgetPx = Math.min(travel, HERO_BUDGET_VH * vh)
-  const doorBudgetPx = Math.max(1, DOOR_BUDGET_VH * vh)
+  // Budgets are RATIOS of the rendered travel, not window.innerHeight units.
+  // On mobile the URL bar collapse changes innerHeight mid-scroll; deriving
+  // budgets from it would shift the segment boundaries under the user's
+  // finger and make the stage jump. The driver is sized in svh (stable),
+  // so travel only changes on real resizes.
+  const TRAVEL_VH = HERO_BUDGET_VH + DOOR_BUDGET_VH + DOOR_DWELL_VH
+  const heroBudgetPx = travel * (HERO_BUDGET_VH / TRAVEL_VH)
+  const doorBudgetPx = Math.max(1, travel * (DOOR_BUDGET_VH / TRAVEL_VH))
   return { scrolled, heroBudgetPx, doorBudgetPx, travel }
 }
 
@@ -469,10 +488,10 @@ onMounted(() => {
   if (driver) {
     driver.style.setProperty('--hs-driver-vh', `${DRIVER_VH}`)
   }
-  // Push the chosen slot aspect ratio into the DOM so the placeholder slot
-  // and the cropped page-1 land at the exact same shape.
-  const slot = heroSlotRef.value
-  if (slot) slot.style.aspectRatio = `${HERO_SLOT_AR}`
+  // Slot shape comes from .im-frame's aspect-ratio (CSS, with a portrait
+  // media-query override on compact viewports) — the slot fills the frame,
+  // and applyHeroTransform reads the same heroSlotAR() so the crop and the
+  // placeholder always land at the same shape.
 
   measureHeroSlot()
   // re-measure after layout settles (fonts, async components)
@@ -1465,23 +1484,35 @@ onBeforeUnmount(() => {
   background: var(--accent);
 }
 .portfolio-topbar .nav a.is-active::after { display: none; }
+@media (max-width: 720px) {
+  /* Six section links wrap to three rows at phone width and eat a third of
+     the screen. Hide them — the page is a single scroll on mobile and the
+     brand mark stays as the home anchor. (Scoped to the portfolio topbar;
+     the standalone hero route keeps its 4-link nav.) */
+  .portfolio-topbar .nav { display: none; }
+}
 
 /* ════════════════════════════════════════════════════════════
    HERO STACK  — Page-1 on top of Page-2, scroll-driven zoom-out
    ════════════════════════════════════════════════════════════ */
 .hs-driver {
   position: relative;
-  /* Driver height = stickyH (100vh - topbar) + scroll travel runway
+  /* Driver height = stickyH (100svh - topbar) + scroll travel runway
      (hero zoom + door split + dwell segments — see DRIVER_VH in script).
      Subtract topbar so page-2 content sits cleanly under the sticky topbar.
-     Fallback matches DRIVER_VH so first paint pre-JS has correct height. */
+     Fallback matches DRIVER_VH so first paint pre-JS has correct height.
+     svh (not vh): on mobile, vh tracks the URL-bar collapse and resizes the
+     stage mid-scroll — svh is the stable small-viewport height. Plain-vh
+     line kept first as fallback for browsers without svh support. */
   height: calc(var(--hs-driver-vh, 505) * 1vh - var(--topbar-h));
+  height: calc(var(--hs-driver-vh, 505) * 1svh - var(--topbar-h));
 }
 .hs-sticky {
   position: sticky;
   top: var(--topbar-h);
   width: 100%;
   height: calc(100vh - var(--topbar-h));
+  height: calc(100svh - var(--topbar-h));
   overflow: hidden;
   isolation: isolate;
   /* 3D stage — gives Page-1's rotateX/Y/Z real depth foreshortening. */
@@ -1558,6 +1589,7 @@ onBeforeUnmount(() => {
    no info gets hidden under the header. */
 main > section.section {
   min-height: calc(100vh - var(--topbar-h));
+  min-height: calc(100svh - var(--topbar-h));
   display: flex;
   flex-direction: column;
 }
@@ -1566,6 +1598,7 @@ main > section.section {
 #hero {
   position: relative;
   height: 100vh;
+  height: 100svh;
   min-height: 640px;
   padding: 0;
   border-top: 0;
@@ -1588,6 +1621,7 @@ main > section.section {
 #intro-message {
   position: relative;
   min-height: 100vh;
+  min-height: 100svh;
   padding: 0;
   border-top: 0;
   background: #1A1F12;
@@ -1700,6 +1734,14 @@ main > section.section {
   width: clamp(360px, 46vw, 640px);
   aspect-ratio: 3/2;
   z-index: 4;
+}
+@media (max-width: 720px) {
+  /* Portrait frame on phones — must stay in sync with HERO_SLOT_AR_COMPACT
+     in the script, which drives the matching page-1 crop. */
+  .im-frame {
+    width: min(68vw, 320px);
+    aspect-ratio: 3/4;
+  }
 }
 .im-frame :deep(.slot) {
   width: 100%;
@@ -1819,6 +1861,17 @@ main > section.section {
 }
 .im-signature :deep(svg path.sig-stroke) {
   stroke-width: 15;
+}
+@media (max-width: 720px) {
+  /* Centre the signature over the portrait frame — the desktop left/top
+     padding bias pushes it off the smaller mobile slot. */
+  .im-signature {
+    padding-left: 0;
+    padding-top: clamp(1.5rem, 6vh, 4rem);
+  }
+  .im-signature :deep(svg) {
+    width: clamp(180px, 55vw, 260px);
+  }
 }
 
 .im-foot {
@@ -2206,7 +2259,10 @@ main > section.section {
   gap: clamp(2rem, 5vw, 5rem);
   align-items: start;
 }
-@media (max-width: 980px) { #summary { grid-template-columns: 1fr; } }
+/* minmax(0,1fr), not bare 1fr: a 1fr track's min is auto, so slot children
+   (aspect-ratio × min-height ⇒ wide min-content) blow the track past the
+   viewport on phones. minmax(0,1fr) lets the track compress. */
+@media (max-width: 980px) { #summary { grid-template-columns: minmax(0, 1fr); } }
 #summary .body p {
   font: 400 clamp(1.05rem, 1.3vw, 1.18rem)/1.65 var(--f-sans);
   color: var(--ink);
@@ -2232,8 +2288,11 @@ main > section.section {
   gap: clamp(2rem, 5vw, 4rem);
   align-items: start;
 }
-@media (max-width: 980px) { .split { grid-template-columns: 1fr; } }
 .split.flip { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
+/* minmax(0,1fr), not bare 1fr: a 1fr track's min is auto, so slot children
+   (aspect-ratio × min-height ⇒ wide min-content) blow the track past the
+   viewport on phones. Must come AFTER .split.flip to win the cascade. */
+@media (max-width: 980px) { .split, .split.flip { grid-template-columns: minmax(0, 1fr); } }
 .split .visual-rail {
   position: sticky;
   top: 6rem;
