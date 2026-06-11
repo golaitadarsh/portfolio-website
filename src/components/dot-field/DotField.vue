@@ -32,12 +32,20 @@ onMounted(() => {
   const el = container.value
   const canvas = el.querySelector('canvas') as HTMLCanvasElement
 
-  renderer = new THREE.WebGLRenderer({
-    canvas,
-    antialias: true,
-    alpha: false,
-    powerPreference: 'high-performance',
-  })
+  // WebGL can be unavailable (browser policy, headless, old GPU). The dot
+  // field is decorative — bail to the plain background rather than throwing
+  // from the mounted hook, which breaks Vue's scheduler flush and freezes
+  // all later reactive updates on the page.
+  try {
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: false,
+      powerPreference: 'high-performance',
+    })
+  } catch {
+    return
+  }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(el.clientWidth, el.clientHeight)
   const bg = new THREE.Color(props.bgColor)

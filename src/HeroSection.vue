@@ -24,6 +24,12 @@ const props = withDefaults(defineProps<Props>(), {
 
 const container = ref<HTMLElement | null>(null)
 
+// WebGL can be unavailable (browser policy, headless, old GPU). The fluid
+// reveal is decorative — when the renderer can't be created we show the
+// static base photo instead of letting the mounted hook throw, which would
+// abort route navigation and blank the page.
+const webglFailed = ref(false)
+
 // Image aspect ratios for cover-fit
 const BASE_ASP    = 1277 / 878
 const LAYERED_ASP = 1512 / 1040
@@ -43,13 +49,18 @@ onMounted(() => {
   const el = container.value
 
   const canvas = el.querySelector('#three-canvas') as HTMLCanvasElement
-  renderer = new THREE.WebGLRenderer({
-    canvas,
-    antialias: true,
-    alpha: true,
-    premultipliedAlpha: false,
-    powerPreference: 'high-performance',
-  })
+  try {
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: true,
+      premultipliedAlpha: false,
+      powerPreference: 'high-performance',
+    })
+  } catch {
+    webglFailed.value = true
+    return
+  }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(el.clientWidth, el.clientHeight)
   renderer.setClearColor(0x000000, 0)
@@ -625,7 +636,8 @@ onMounted(() => {
   <div ref="container" class="hero">
     <DotField :influence="450" :strength="2" />
     <div class="hero-stack-blur" aria-hidden="true"></div>
-    <canvas id="three-canvas"></canvas>
+    <canvas v-show="!webglFailed" id="three-canvas"></canvas>
+    <img v-if="webglFailed" class="three-canvas-fallback" :src="basePhotoUrl" alt="" aria-hidden="true" />
 
     <div class="overlay">
       <header v-if="props.showTopbar" class="topbar">
@@ -690,6 +702,16 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   display: block;
+  z-index: 10;
+}
+/* Static stand-in for the WebGL canvas when a context can't be created —
+   same layer, cover-fit like the shader's base pass. */
+.three-canvas-fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   z-index: 10;
 }
 /* ── editorial design tokens (exaggerated minimalism · per ui-ux skill) ─── */

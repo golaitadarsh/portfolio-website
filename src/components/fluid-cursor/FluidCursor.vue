@@ -101,8 +101,10 @@ onMounted(() => {
   };
 
   // Get WebGL context (WebGL1 or WebGL2)
-  const { gl, ext } = getWebGLContext(canvas);
-  if (!gl || !ext) return;
+  const ctx = getWebGLContext(canvas);
+  if (!ctx.gl || !ctx.ext) return;
+  const gl = ctx.gl;
+  const ext = ctx.ext;
 
   // If no linear filtering, reduce resolution
   if (!ext.supportLinearFiltering) {
@@ -127,7 +129,10 @@ onMounted(() => {
     }
 
     if (!gl) {
-      throw new Error("Unable to initialize WebGL.");
+      // WebGL unavailable (blocked by browser policy, headless, old GPU).
+      // The fluid cursor is decorative — degrade to a no-op instead of
+      // throwing, which would abort the route mount and blank the page.
+      return { gl: null, ext: null };
     }
 
     const isWebGL2 = "drawBuffers" in gl;

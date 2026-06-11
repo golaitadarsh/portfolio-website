@@ -42,7 +42,6 @@ const characterVisible = ref(false)
 //   endBrightness · brightness at fully-zoomed (1 = neutral; <1 darken).
 //   endContrast   · contrast at fully-zoomed.
 //   smoothing     · 0..1, lerp factor per frame; smaller = silkier (slower catchup).
-//   driverVh      · driver section height in vh. Bigger = longer scroll runway.
 // ────────────────────────────────────────────────────────────────────
 // Slot aspect for landed Page-1. Landscape 3:2 by default; change to taste
 // (e.g. 16/10, 4/3). Slot rect on Page-2 is also forced to this ratio.
@@ -83,13 +82,8 @@ const heroZoom = {
   bgDarkenEnd:   0.78,
   // ── MOTION CURVE ──────────────────────────────────────────────────
   // Higher smoothing = snappier response to scroll. 0.15 feels human/instant
-  // without losing the lerp blend. driverVh shortened so first scroll input
-  // produces visible motion immediately (no "scroll twice to start").
+  // without losing the lerp blend.
   smoothing:     0.12,
-  // 240 hero budget + ~100 sticky + small reserve. Trimmed from 520 so the
-  // leftover sticky runway after the doors open (which the wheel-lock dwell
-  // does NOT cover) is ~one screen, not ~4 notches, into the summary.
-  driverVh:      360,
   // Pop disabled — set popAmount > 0 to re-enable a landing overshoot.
   popAmount:     0,
   popAt:         0.88,
@@ -126,40 +120,28 @@ const signatureRef  = ref<HTMLElement | null>(null)
 
 // ────────────────────────────────────────────────────────────────────
 // Door transition (Page 2 → Page 3). The doors live INSIDE `.hs-sticky`
-// — same stage as the existing P2 + landed P1 + signature. Once the
-// signature is fully drawn (heroProgress ≈ 1) and the user keeps
-// wheeling, we lock the page scroll, freeze the P2 visual by hiding it
-// in favour of the matching door clone, and split the door halves apart
-// to reveal the HeroCharacter sitting at z=0 behind everything.
-// After the doors fully part, we release the wheel lock and the user
-// scrolls past the remaining .hs-driver runway into the body content.
+// — same stage as the existing P2 + landed P1 + signature. The split is
+// scroll-scrubbed, exactly like the hero zoom: the driver reserves a
+// runway segment after the hero budget, and door progress is a pure
+// function of how far the user has scrolled into that segment. No wheel
+// hijack, no scroll lock — every input method (wheel, trackpad, touch,
+// keyboard, scrollbar, anchor jump) lands on a deterministic state, and
+// a fast flick can never outrun the stage because the sticky pin covers
+// the entire runway.
+//
+// Runway layout (vh of scroll travel):
+//   0 ──────────── HERO_BUDGET_VH ──────── +DOOR_BUDGET_VH ── +DOOR_DWELL_VH
+//   hero zoom + signature │ doors split open │ hold on character │ release
 // ────────────────────────────────────────────────────────────────────
 const doorProgressRef = ref(0)         // 0 = doors closed, 1 = fully open
-const doorVisibleRef  = ref(false)     // door layer painted only when in range
 const characterDoorRef = ref(false)    // pre-mount HeroCharacter behind doors
 
 const doorConfig = {
-  // Wheel-delta units required to fully open the doors. ~1200 ≈ 3-4
-  // medium wheel notches on macOS.
-  wheelTotal: 1500,
-  smoothing:  0.16,
-  // Release wheel lock once we're this far open / fully closed.
-  releaseAt:  0.985,
-  // Engage door lock only once hero zoom-out + signature have committed.
-  heroDoneAt: 0.985,
-  // After doors fully open, hold the lock for an extra dwell so the user
-  // can actually see the character before falling into the summary.
-  // Wheel units of "dwell" before releasing for real. One macOS wheel
-  // notch is ~90–120 delta, so this is ~one notch: open-doors / character
-  // stage releases into the summary on a single further scroll.
-  dwellTotal: 90,
+  smoothing: 0.16,
 }
-let doorDwell = 0          // 0 = just opened, dwellTotal = ready to release
 let doorRafId: number | null = null
 let doorProgress = 0
 let doorProgressTarget = 0
-let doorAccum = 0           // raw wheel delta accumulated, 0..wheelTotal
-let doorLocked = false      // true when we're hijacking wheel events
 
 // Per-path metadata captured after v-html injects the SVG. Used to render the
 // signature as a sequential pen draw and to position the pen tip at the active
@@ -220,7 +202,6 @@ function syncTopbarH() {
   // residue that the browser rounds into a single-px scrollbar.
   if (h > 0) {
     document.documentElement.style.setProperty('--topbar-h', `${h}px`)
-    invalidateTopbarH()
   }
 }
 
@@ -381,15 +362,20 @@ function smoothstep(a: number, b: number, x: number) {
   return t * t * (3 - 2 * t)
 }
 
-// Hero zoom-out + signature consume only the FIRST `heroBudget` of the
-// runway. The remainder is held in reserve so the sticky stays pinned
-// while the door split (wheel-locked) runs after heroProgress hits 1.
+// Scroll runway segments (vh of driver travel). Hero zoom + signature
+// consume the first segment, the door split scrubs through the second,
+// and the dwell holds the open-door character stage for ~one wheel notch
+// before the sticky releases into the summary. Total driver height =
+// segments + one sticky viewport (100vh).
 const HERO_BUDGET_VH = 240
+const DOOR_BUDGET_VH = 150
+const DOOR_DWELL_VH  = 15
+const DRIVER_VH = 100 + HERO_BUDGET_VH + DOOR_BUDGET_VH + DOOR_DWELL_VH
 
 // Shared scroll geometry for the sticky hero/door stage. `scrolled` is how
 // far into the pinned runway we are (0 = stage just pinned). `heroBudgetPx`
-// is where hero-zoom completes and the door entry sits.
-function doorGeom() {
+// is where hero-zoom completes and the door split begins.
+function stageGeom() {
   const driver = heroDriverRef.value
   const sticky = heroStickyRef.value
   if (!driver) return null
@@ -397,16 +383,25 @@ function doorGeom() {
   const stickyH = sticky?.clientHeight || window.innerHeight
   const travel = Math.max(1, driver.clientHeight - stickyH)
   const scrolled = Math.min(travel, Math.max(0, -rect.top))
-  const heroBudgetPx = Math.min(travel, HERO_BUDGET_VH * window.innerHeight / 100)
-  return { scrolled, heroBudgetPx, travel }
+  const vh = window.innerHeight / 100
+  const heroBudgetPx = Math.min(travel, HERO_BUDGET_VH * vh)
+  const doorBudgetPx = Math.max(1, DOOR_BUDGET_VH * vh)
+  return { scrolled, heroBudgetPx, doorBudgetPx, travel }
 }
 
 function onHeroScroll() {
-  const g = doorGeom()
+  const g = stageGeom()
   if (!g) return
   heroProgressTarget = Math.min(1, g.scrolled / Math.max(1, g.heroBudgetPx))
+  // Door split scrubs through the runway segment right after the hero
+  // budget. Pure position → progress mapping; reverse scroll closes them.
+  doorProgressTarget = Math.min(1, Math.max(0, (g.scrolled - g.heroBudgetPx) / g.doorBudgetPx))
+  characterDoorRef.value = doorProgressTarget > 0.05
   if (heroRafId === null) {
     heroRafId = requestAnimationFrame(heroLoop)
+  }
+  if (doorRafId === null) {
+    doorRafId = requestAnimationFrame(doorLoop)
   }
 }
 
@@ -421,138 +416,6 @@ function heroLoop() {
     heroProgress = heroProgressTarget
     applyHeroTransform()
   }
-}
-
-// ────────────────────────────────────────────────────────────────────
-// Door transition — wheel-driven, scroll-locked. No actual page scroll
-// happens during the split: when the door stage top reaches the viewport
-// top, we lock body scroll and route wheel deltas into doorAccum (which
-// drives doorProgress 0→1). Once fully open, lock releases and natural
-// scroll continues into P3 below.
-//
-// Reverse: at door progress 1 with wheel-up at top of stage we re-engage
-// and close the doors in reverse before releasing back to P2.
-// ────────────────────────────────────────────────────────────────────
-let cachedTopbarH: number | null = null
-function invalidateTopbarH() { cachedTopbarH = null }
-
-function prefersReducedMotion() {
-  return typeof window !== 'undefined' &&
-    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
-}
-
-// Tolerance (px of scroll runway) for catching the door entry. A fast wheel
-// flick can jump well past the exact entry offset between two frames, so the
-// engage test is a half-open zone (not a tight ±window) and the scroll is
-// snapped to the exact entry on engage. The sticky stays pinned across the
-// whole reserved runway, so without this anchoring a reverse wheel would slam
-// the doors shut at an arbitrary offset and trap the scroll mid-summary.
-const DOOR_ENTRY_EPS = 24
-
-// Snap the page scroll so the door stage sits exactly at its entry offset.
-// `delta` = how far current scroll is from the entry (positive = below it).
-function snapToDoorEntry(delta: number) {
-  window.scrollTo({ top: window.scrollY - delta, left: 0, behavior: 'auto' })
-}
-
-function maybeEngageDoorLock(wheelDy = 0) {
-  // Reduced-motion users keep native scroll — never hijack the wheel.
-  if (prefersReducedMotion()) return
-  const g = doorGeom()
-  if (!g) return
-  // distToEntry > 0 → scrolled past the door entry (down into the runway);
-  // < 0 → still above it. Door entry is where hero-zoom finishes.
-  const distToEntry = g.scrolled - g.heroBudgetPx
-  // Gate on SCROLL POSITION, not the lerped heroProgress. The visual zoom
-  // (heroProgress) lags scroll by ~10 frames via its smoothing lerp; gating the
-  // door lock on it meant a fast wheel notch could carry native scroll 300–500px
-  // PAST the entry before heroProgress caught up to heroDoneAt — the page
-  // "leaked" past the frozen stage with the doors still shut, then snapped back
-  // jarringly once the lerp arrived. atEntry is position-derived (no lag), so the
-  // lock fires the instant scroll reaches the entry, killing the leak.
-  const atEntry = distToEntry >= -DOOR_ENTRY_EPS
-  doorVisibleRef.value = heroProgressTarget >= doorConfig.heroDoneAt * 0.6
-  if (doorLocked) return
-  const doorsClosed = doorAccum <= 0.001 && doorDwell <= 0.001
-  const canOpenMore  = doorAccum < doorConfig.wheelTotal || doorDwell < doorConfig.dwellTotal
-  const canCloseMore = doorAccum > 0 || doorDwell > 0
-  // Forward (wheel down): the moment scroll reaches/passes the entry while the
-  // doors are still shut, grab the lock and snap exactly to the entry — even
-  // if a fast flick overshot — so the split always plays from the top.
-  if (wheelDy > 0 && doorsClosed && canOpenMore && atEntry) {
-    snapToDoorEntry(distToEntry)
-    doorLocked = true
-    return
-  }
-  // Reverse (wheel up): native scroll first carries the user back up toward the
-  // entry; once within range with the doors still open, re-take the lock and
-  // snap to the entry so the close animation is anchored to the door stage.
-  //
-  // wheelDy < 0 fires on a real wheel-up AND on the passive scroll listener
-  // when it detects upward scroll (it now passes dir = -1, not 0). Without the
-  // scroll-driven path, a fast wheel-up flick after the doors opened let native
-  // scroll sail up through the entry between wheel frames while the doors stayed
-  // stuck fully open (door-progress frozen at 1). The scroll handler now catches
-  // the reverse the moment the page comes back within range, regardless of
-  // wheel cadence. Downward scroll passes dir = +1 so leaving into the summary
-  // never re-locks here.
-  if (wheelDy < 0 && canCloseMore && distToEntry <= DOOR_ENTRY_EPS) {
-    snapToDoorEntry(distToEntry)
-    doorLocked = true
-  }
-}
-
-function onDoorWheel(e: WheelEvent) {
-  // Normalize delta first so we can pass direction to engage check.
-  let dy = e.deltaY
-  if (e.deltaMode === 1) dy *= 16
-  else if (e.deltaMode === 2) dy *= window.innerHeight
-  if (!doorLocked) maybeEngageDoorLock(dy)
-  if (!doorLocked) return
-  // Hijack wheel — no page scroll happens during the split.
-  e.preventDefault()
-  // Two phases while locked:
-  //   1) doorAccum 0 → wheelTotal: doors split open
-  //   2) doorDwell 0 → dwellTotal: hold lock so user sees the character
-  if (doorAccum < doorConfig.wheelTotal) {
-    doorAccum = Math.max(0, Math.min(doorConfig.wheelTotal, doorAccum + dy))
-    doorProgressTarget = doorAccum / doorConfig.wheelTotal
-  } else if (dy > 0) {
-    // Doors are fully open — consume wheel into the dwell window.
-    doorDwell = Math.min(doorConfig.dwellTotal, doorDwell + dy)
-  } else if (dy < 0) {
-    // Wheel-up during dwell takes us back toward the split phase.
-    if (doorDwell > 0) {
-      doorDwell = Math.max(0, doorDwell + dy)
-    } else {
-      doorAccum = Math.max(0, doorAccum + dy)
-      doorProgressTarget = doorAccum / doorConfig.wheelTotal
-    }
-  }
-  characterDoorRef.value = doorProgressTarget > 0.1
-  // Release the lock only after the dwell window is fully consumed (down)
-  // or the doors are fully closed again (up).
-  if (doorDwell >= doorConfig.dwellTotal && dy > 0) {
-    doorLocked = false
-  }
-  if (doorAccum <= 0.001 && dy < 0) {
-    doorLocked = false
-  }
-  if (doorRafId === null) doorRafId = requestAnimationFrame(doorLoop)
-}
-
-let lastDoorScrollY = typeof window !== 'undefined' ? window.scrollY : 0
-function onDoorScroll() {
-  // Derive scroll direction so the engage check can tell "scrolling down away
-  // from open doors" (must NOT re-lock — user is leaving into the summary)
-  // from "scrolling back up toward open doors" (must re-lock and close them).
-  // The passive scroll listener has no wheel delta of its own, so we synthesise
-  // the sign from the scroll position change.
-  const y = window.scrollY
-  const dir = y < lastDoorScrollY ? -1 : y > lastDoorScrollY ? 1 : 0
-  lastDoorScrollY = y
-  // Outside the lock, just keep visibility flag fresh + watch for engage.
-  maybeEngageDoorLock(dir)
 }
 
 function doorLoop() {
@@ -604,7 +467,7 @@ onMounted(() => {
   // Hero zoom-out driver setup.
   const driver = heroDriverRef.value
   if (driver) {
-    driver.style.setProperty('--hs-driver-vh', `${heroZoom.driverVh}`)
+    driver.style.setProperty('--hs-driver-vh', `${DRIVER_VH}`)
   }
   // Push the chosen slot aspect ratio into the DOM so the placeholder slot
   // and the cropped page-1 land at the exact same shape.
@@ -668,13 +531,6 @@ onMounted(() => {
     revealObs.observe(reveal)
   }
 
-  // Door transition wiring. Scroll listener watches for the engage point;
-  // wheel listener (non-passive) hijacks input while locked.
-  window.addEventListener('scroll', onDoorScroll, { passive: true })
-  window.addEventListener('resize', onDoorScroll)
-  window.addEventListener('resize', invalidateTopbarH)
-  window.addEventListener('wheel', onDoorWheel, { passive: false })
-  onDoorScroll()
 })
 
 onBeforeUnmount(() => {
@@ -683,11 +539,7 @@ onBeforeUnmount(() => {
   revealObs?.disconnect()
   revealObs = null
   window.removeEventListener('scroll', onHeroScroll)
-  window.removeEventListener('scroll', onDoorScroll)
-  window.removeEventListener('wheel', onDoorWheel)
   window.removeEventListener('resize', measureHeroSlot)
-  window.removeEventListener('resize', onDoorScroll)
-  window.removeEventListener('resize', invalidateTopbarH)
   window.removeEventListener('resize', syncTopbarH)
   heroResizeObs?.disconnect()
   heroResizeObs = null
@@ -695,20 +547,14 @@ onBeforeUnmount(() => {
   heroRafId = null
   if (doorRafId !== null) cancelAnimationFrame(doorRafId)
   doorRafId = null
-  // Reset door state — module-scope vars otherwise leak across remounts
-  // (HMR, route re-entry) and break the next mount's engage gate.
-  doorAccum = 0
-  doorDwell = 0
-  doorLocked = false
+  // Reset stage state — module-scope vars otherwise leak across remounts
+  // (HMR, route re-entry).
   doorProgress = 0
   doorProgressTarget = 0
-  lastDoorScrollY = 0
   doorProgressRef.value = 0
-  doorVisibleRef.value = false
   characterDoorRef.value = false
   heroProgress = 0
   heroProgressTarget = 0
-  cachedTopbarH = null
 })
 </script>
 
@@ -1625,9 +1471,11 @@ onBeforeUnmount(() => {
    ════════════════════════════════════════════════════════════ */
 .hs-driver {
   position: relative;
-  /* Driver height = stickyH (100vh - topbar) + travel runway (100vh).
-     Subtract topbar so page-2 content sits cleanly under the sticky topbar. */
-  height: calc(var(--hs-driver-vh, 220) * 1vh - var(--topbar-h));
+  /* Driver height = stickyH (100vh - topbar) + scroll travel runway
+     (hero zoom + door split + dwell segments — see DRIVER_VH in script).
+     Subtract topbar so page-2 content sits cleanly under the sticky topbar.
+     Fallback matches DRIVER_VH so first paint pre-JS has correct height. */
+  height: calc(var(--hs-driver-vh, 505) * 1vh - var(--topbar-h));
 }
 .hs-sticky {
   position: sticky;
@@ -2044,7 +1892,7 @@ main > section.section {
      z=1  #intro-message    (Page 2 base)
      z=5  #hero.hs-page1    (landed HeroSection inside P2 slot)
      z=6  .im-signature     (drawn signature)
-     z=20 .door-layer       (P2 visual clones; split apart on wheel)
+     z=20 .door-layer       (P2 visual clones; split apart on scroll)
    When doorProgress > 0, the real P2 stack (1/5/6) fades to invisible
    so only the splitting clones are seen, and the HeroCharacter behind
    reveals through the widening gap.

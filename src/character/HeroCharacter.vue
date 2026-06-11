@@ -42,7 +42,15 @@ onMounted(() => {
   const aspect = rect.width / rect.height;
   const scene = new THREE.Scene();
 
-  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  // WebGL can be unavailable (browser policy, headless, old GPU). The 3D
+  // character is progressive enhancement — bail to the empty stage backdrop
+  // rather than throwing from the mounted hook.
+  let renderer: THREE.WebGLRenderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  } catch {
+    return;
+  }
   renderer.setSize(rect.width, rect.height);
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
