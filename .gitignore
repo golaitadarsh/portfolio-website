@@ -26,3 +26,4 @@ dist/
 *.tex
 !assets/**/*.png
 !public/**/*.png
+.gstack/
