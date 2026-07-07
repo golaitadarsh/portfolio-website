@@ -18,6 +18,7 @@ const setCharacter = (
   camera: THREE.PerspectiveCamera,
   opts: CharacterOptions = {}
 ) => {
+  const disposers: (() => void)[] = [];
   const {
     modelPath = "/models/model.glb",
     dracoPath = "/draco/",
@@ -64,7 +65,7 @@ const setCharacter = (
             }
           });
 
-          setupScreenEmissive(character);
+          disposers.push(setupScreenEmissive(character));
           resolve(gltf);
           dracoLoader.dispose();
         },
@@ -77,10 +78,15 @@ const setCharacter = (
     });
   };
 
-  return { loadCharacter };
+  const dispose = () => {
+    disposers.forEach((fn) => fn());
+    disposers.length = 0;
+  };
+
+  return { loadCharacter, dispose };
 };
 
-function setupScreenEmissive(character: THREE.Object3D) {
+function setupScreenEmissive(character: THREE.Object3D): () => void {
   let screenLight: any = null;
   let monitor: any = null;
 
@@ -104,21 +110,31 @@ function setupScreenEmissive(character: THREE.Object3D) {
     }
   });
 
+  // Screen flicker. The old version paired the interval with a permanent
+  // requestAnimationFrame loop that wrote the SAME value every frame (the
+  // target only changes when the interval fires) and neither was ever torn
+  // down — they kept running after unmount, and stacked one extra rAF loop
+  // per route visit. Writing the value directly in the interval produces the
+  // identical 200ms-stepped flicker with no per-frame work, and the interval
+  // is cleared by the returned disposer.
+  let flickerId: ReturnType<typeof setInterval> | null = null;
   if (screenLight?.material) {
-    let intensity = 0;
-    setInterval(() => {
-      intensity = Math.random();
-    }, 200);
-    const pulse = () => {
+    // The old rAF loop wrote intensity 0 on its first frame (interval hadn't
+    // ticked yet) — replicate that initial state explicitly.
+    screenLight.material.emissiveIntensity = 0;
+    flickerId = setInterval(() => {
       if (screenLight?.material) {
-        screenLight.material.emissiveIntensity = intensity * 8;
+        screenLight.material.emissiveIntensity = Math.random() * 8;
       }
-      requestAnimationFrame(pulse);
-    };
-    pulse();
+    }, 200);
   }
 
   void monitor;
+
+  return () => {
+    if (flickerId !== null) clearInterval(flickerId);
+    flickerId = null;
+  };
 }
 
 export default setCharacter;

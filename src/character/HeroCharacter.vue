@@ -19,6 +19,12 @@ interface Props {
   character?: CharacterOptions;
   lighting?: LightingOptions;
   introDelayMs?: number;
+  /** True while the stage is fully occluded (doors closed). Animation state
+   *  (mixer, head tracking, light tweens) keeps advancing so the character
+   *  stays warm, but the actual GPU render is skipped — nothing it draws can
+   *  be seen. First visible frame after unpause is identical to an always-on
+   *  loop. */
+  paused?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -26,6 +32,7 @@ const props = withDefaults(defineProps<Props>(), {
   cameraFov: 14.5,
   cameraZoom: 1.1,
   introDelayMs: 100,
+  paused: false,
 });
 
 const emit = defineEmits<{ (e: "loaded"): void }>();
@@ -52,7 +59,9 @@ onMounted(() => {
     return;
   }
   renderer.setSize(rect.width, rect.height);
-  renderer.setPixelRatio(window.devicePixelRatio);
+  // Cap at 2 like every other canvas on the site — 3x-DPR devices pay 2.25x
+  // the fill cost for sharpness the eye can't resolve on a lit 3D scene.
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1;
   container.appendChild(renderer.domElement);
@@ -71,10 +80,16 @@ onMounted(() => {
   let mixer: THREE.AnimationMixer | undefined;
   let rafId = 0;
   let hoverCleanup: (() => void) | void;
+  let introTimer: number | undefined;
 
   const clock = new THREE.Clock();
   const light = setLighting(scene, props.lighting);
-  const { loadCharacter } = setCharacter(renderer, scene, camera, props.character);
+  const { loadCharacter, dispose: disposeCharacter } = setCharacter(
+    renderer,
+    scene,
+    camera,
+    props.character
+  );
 
   let mouse = { x: 0, y: 0 };
   let interpolation = { x: 0.1, y: 0.2 };
@@ -135,13 +150,23 @@ onMounted(() => {
       null;
     screenLight = char.getObjectByName("screenlight") || null;
 
-    setTimeout(() => {
+    introTimer = window.setTimeout(() => {
       light.turnOnLights();
       animations.startIntro();
     }, props.introDelayMs);
 
     emit("loaded");
   });
+
+  // Skip GPU renders while the stage is occluded (paused prop, doors closed)
+  // or scrolled out of the viewport. State updates above the render call
+  // still run every frame, so the first rendered frame after a gate opens is
+  // exactly what an always-on loop would have shown.
+  let inViewport = true;
+  const visObs = new IntersectionObserver((entries) => {
+    inViewport = entries.some((e) => e.isIntersecting);
+  });
+  visObs.observe(container);
 
   const animate = () => {
     rafId = requestAnimationFrame(animate);
@@ -158,19 +183,39 @@ onMounted(() => {
     }
     const delta = clock.getDelta();
     if (mixer) mixer.update(delta);
-    renderer.render(scene, camera);
+    if (!props.paused && inViewport) {
+      renderer.render(scene, camera);
+    }
   };
   animate();
 
   cleanup = () => {
     cancelAnimationFrame(rafId);
     clearTimeout(touchTimer);
+    clearTimeout(introTimer);
+    visObs.disconnect();
     document.removeEventListener("mousemove", onMouseMove);
     container.removeEventListener("touchstart", onTouchStart);
     container.removeEventListener("touchmove", onTouchMove);
     container.removeEventListener("touchend", onTouchEndEv);
     window.removeEventListener("resize", onResize);
     hoverCleanup?.();
+    disposeCharacter();
+    light.dispose();
+    // scene.clear() only detaches children — GPU buffers stay alive until
+    // geometries/materials/textures are disposed explicitly.
+    scene.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.geometry) mesh.geometry.dispose();
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      mats.forEach((m: any) => {
+        if (!m) return;
+        Object.values(m).forEach((v: any) => {
+          if (v && v.isTexture) v.dispose();
+        });
+        m.dispose?.();
+      });
+    });
     scene.clear();
     renderer.dispose();
     if (renderer.domElement.parentNode === container) {

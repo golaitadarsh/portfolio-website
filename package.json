@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "gsap": "^3.15.0",
     "motion-v": "^2.2.1",
     "three": "^0.184.0",
     "three-stdlib": "^2.36.1",

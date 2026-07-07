@@ -39,7 +39,11 @@ onMounted(() => {
   try {
     renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: true,
+      // No MSAA: the scene is a single full-screen quad, so there are no
+      // primitive edges inside the viewport for it to touch — the dots are
+      // antialiased in the fragment shader (smoothstep edge). Identical
+      // output, less memory/bandwidth.
+      antialias: false,
       alpha: false,
       powerPreference: 'high-performance',
     })
@@ -171,6 +175,7 @@ onMounted(() => {
     const w = el.clientWidth, h = el.clientHeight
     renderer.setSize(w, h)
     mat.uniforms.uResolution.value.set(w, h)
+    needsRender = true
   }
 
   window.addEventListener('mousemove', onMove, { passive: true })
@@ -178,16 +183,29 @@ onMounted(() => {
   window.addEventListener('touchmove', onTouch, { passive: true })
   window.addEventListener('resize', onResize)
 
+  // Dirty-flag rendering: the frame is a pure function of uMouse and
+  // uResolution. When the cursor is idle (or off-screen) the smoothed
+  // position converges and every further render produces identical pixels —
+  // skip them. The rAF tick itself stays alive; the per-frame comparison is
+  // effectively free next to a full-screen 9-tap shader pass.
+  let needsRender = true
   function frame() {
     animId = requestAnimationFrame(frame)
     if (mouse.active) {
       smooth.x += (mouse.x - smooth.x) * 0.22
       smooth.y += (mouse.y - smooth.y) * 0.22
-      mat.uniforms.uMouse.value.set(smooth.x, smooth.y)
-    } else {
-      mat.uniforms.uMouse.value.set(-9999, -9999)
     }
-    renderer.render(scene, cam)
+    const targetX = mouse.active ? smooth.x : -9999
+    const targetY = mouse.active ? smooth.y : -9999
+    const u = mat.uniforms.uMouse.value
+    if (Math.abs(u.x - targetX) > 0.05 || Math.abs(u.y - targetY) > 0.05) {
+      u.set(targetX, targetY)
+      needsRender = true
+    }
+    if (needsRender) {
+      needsRender = false
+      renderer.render(scene, cam)
+    }
   }
   frame()
 

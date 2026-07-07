@@ -1,7 +1,9 @@
 <script lang="ts" setup>
-import { defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import HeroSection from '../HeroSection.vue'
 import BeamsBackground from '../components/BeamsBackground.vue'
+import CorporateSlider from '../components/portfolio/CorporateSlider.vue'
+import TimedCards from '../components/portfolio/TimedCards.vue'
 import signatureSvgRaw from '../../assets/signature.svg?raw'
 
 // Normalise the source SVG so it can be safely injected via v-html and
@@ -25,7 +27,8 @@ const signatureMarkup = (() => {
   return svg.trim()
 })()
 
-const HeroCharacter = defineAsyncComponent(() => import('../character/HeroCharacter.vue'))
+const JourneyCharacter = defineAsyncComponent(() => import('../character/JourneyCharacter.vue'))
+const SummaryCharacter = defineAsyncComponent(() => import('../character/SummaryCharacter.vue'))
 
 const characterVisible = ref(false)
 
@@ -217,7 +220,9 @@ function syncTopbarH() {
 }
 
 let scrollSpy: IntersectionObserver | null = null
-let revealObs: IntersectionObserver | null = null
+let warmIdleId: number | null = null
+let warmTimerId: number | null = null
+let warmLoadListener: (() => void) | null = null
 let heroRafId: number | null = null
 let heroResizeObs: ResizeObserver | null = null
 let heroProgress = 0
@@ -383,7 +388,11 @@ function smoothstep(a: number, b: number, x: number) {
 // segments + one sticky viewport (100vh).
 const HERO_BUDGET_VH = 240
 const DOOR_BUDGET_VH = 150
-const DOOR_DWELL_VH  = 15
+// Longer dwell than the original one-notch hold: viewers were flicking
+// straight past the character stage without ever discovering that the
+// head follows the cursor. ~4 wheel notches of pinned hold + the cursor
+// hint overlay give the interaction a chance to be seen.
+const DOOR_DWELL_VH  = 70
 const DRIVER_VH = 100 + HERO_BUDGET_VH + DOOR_BUDGET_VH + DOOR_DWELL_VH
 
 // Shared scroll geometry for the sticky hero/door stage. `scrolled` is how
@@ -453,6 +462,329 @@ function doorLoop() {
     const t = Math.min(1, Math.max(0, doorProgress))
     doorProgressRef.value = 1 - Math.pow(1 - t, 4)
   }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Pinned staged sections (Education / Experience) + scroll-entrance
+// reveal choreography. Ported from the claude.ai/design prototype
+// (portfolio.html + reveal.js). Each setup returns a cleanup fn.
+// ────────────────────────────────────────────────────────────────────
+const eduRef = ref<HTMLElement | null>(null)
+const xpRef = ref<HTMLElement | null>(null)
+const sectionCleanups: (() => void)[] = []
+
+// Education: section is 240vh tall; content pins for the extra scroll.
+// Progress through the pin drives the stages — scrolling back reverses.
+function setupEducationPin(): (() => void) | null {
+  const sec = eduRef.value
+  if (!sec) return null
+  const mqMotion = matchMedia('(prefers-reduced-motion: reduce)')
+  let raf = 0
+
+  function update() {
+    raf = 0
+    if (!sec!.classList.contains('edu-staged')) return
+    const rect = sec!.getBoundingClientRect()
+    const range = rect.height - innerHeight
+    const p = range > 0 ? Math.min(1, Math.max(0, -rect.top / range)) : 1
+    sec!.classList.toggle('head-in', rect.top < innerHeight * 0.92)
+    sec!.classList.toggle('stage-name', p >= 0.14)
+    sec!.classList.toggle('stage-details', p >= 0.48)
+  }
+  function onScroll() { if (!raf) raf = requestAnimationFrame(update) }
+
+  function apply() {
+    const on = !mqMotion.matches
+    sec!.classList.toggle('edu-staged', on)
+    if (on) {
+      addEventListener('scroll', onScroll, { passive: true })
+      update()
+    } else {
+      removeEventListener('scroll', onScroll)
+      sec!.classList.remove('stage-name', 'stage-details', 'head-in')
+    }
+  }
+  mqMotion.addEventListener?.('change', apply)
+  apply()
+  return () => {
+    mqMotion.removeEventListener?.('change', apply)
+    removeEventListener('scroll', onScroll)
+    if (raf) cancelAnimationFrame(raf)
+  }
+}
+
+// Work Experience: section is 320vh tall; content pins for the extra
+// scroll. Progress picks the active employer — name fills with the accent
+// mark, its role panel rises in. Small screens / reduced motion fall back
+// to stacked entries with every company highlighted.
+function setupExperiencePin(): (() => void) | null {
+  const sec = xpRef.value
+  if (!sec) return null
+  const cos = Array.from(sec.querySelectorAll<HTMLElement>('.xp-co'))
+  const panels = Array.from(sec.querySelectorAll<HTMLElement>('.xp-panel'))
+  const mqMotion = matchMedia('(prefers-reduced-motion: reduce)')
+  let raf = 0
+
+  function setActive(i: number) {
+    cos.forEach((el, j) => el.classList.toggle('is-active', j === i))
+    panels.forEach((el, j) => el.classList.toggle('is-active', j === i))
+    sec!.dataset.xpActive = String(i)
+  }
+  function update() {
+    raf = 0
+    if (!sec!.classList.contains('xp-staged')) return
+    const rect = sec!.getBoundingClientRect()
+    const range = rect.height - innerHeight
+    const p = range > 0 ? Math.min(1, Math.max(0, -rect.top / range)) : 1
+    sec!.classList.toggle('head-in', rect.top < innerHeight * 0.92)
+    sec!.classList.toggle('stage-in', rect.top < innerHeight * 0.55)
+    setActive(p < 0.38 ? 0 : p < 0.72 ? 1 : 2)
+  }
+  function onScroll() { if (!raf) raf = requestAnimationFrame(update) }
+
+  function apply() {
+    const on = !mqMotion.matches && innerWidth > 880 && innerHeight > 620
+    sec!.classList.toggle('xp-staged', on)
+    if (on) {
+      addEventListener('scroll', onScroll, { passive: true })
+      update()
+    } else {
+      removeEventListener('scroll', onScroll)
+      sec!.classList.remove('stage-in', 'head-in')
+      cos.forEach((el) => el.classList.add('is-active'))
+      panels.forEach((el) => el.classList.add('is-active'))
+    }
+  }
+  mqMotion.addEventListener?.('change', apply)
+  addEventListener('resize', apply, { passive: true })
+  apply()
+  return () => {
+    mqMotion.removeEventListener?.('change', apply)
+    removeEventListener('resize', apply)
+    removeEventListener('scroll', onScroll)
+    if (raf) cancelAnimationFrame(raf)
+  }
+}
+
+// Summary: the character's journey destination. On desktop the SAME
+// character (same canvas — see JourneyCharacter.vue) breaks out of the door
+// stage the moment the runway releases: a scroll tween carries the page to
+// the summary while he flies from his on-stage position to the slot beside
+// the text. While pinned, icon buttons play one-shot clips; the final pin
+// segment scrubs a contact-locked push-out — he walks INTO the text block
+// first, then text and character travel off the left edge together at the
+// same speed, like a real shove.
+const summaryRef = ref<HTMLElement | null>(null)
+const summarySlotRef = ref<HTMLElement | null>(null)
+const summaryCharRef = ref<any>(null) // non-staged fallback component
+const journeyRef = ref<any>(null)
+const sumStaged = ref(false)
+
+// Live character state, emitted by JourneyCharacter — drives button states.
+const charState = reactive({ ready: false, busy: false, phase: 'stage', pushing: false })
+function onCharState(s: { ready: boolean; busy: boolean; phase: string; pushing: boolean }) {
+  charState.ready = s.ready
+  charState.busy = s.busy
+  charState.phase = s.phase
+  charState.pushing = s.pushing
+}
+function playCharAction(name: string) {
+  journeyRef.value?.playAction?.(name)
+}
+
+// rAF scroll tween — deterministic timing so the flight and the page move
+// as one. Any real user input (wheel / touch / keys) cancels it; the flight
+// still lands correctly because it tracks the live slot rect.
+let scrollTweenRaf = 0
+function cancelScrollTween() {
+  if (scrollTweenRaf) cancelAnimationFrame(scrollTweenRaf)
+  scrollTweenRaf = 0
+}
+function tweenScrollTo(targetY: number, dur: number) {
+  cancelScrollTween()
+  const startY = window.scrollY
+  const dist = targetY - startY
+  if (Math.abs(dist) < 2) return
+  const t0 = performance.now()
+  const step = (now: number) => {
+    scrollTweenRaf = 0
+    const t = Math.min(1, (now - t0) / dur)
+    const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+    window.scrollTo({ top: startY + dist * e, behavior: 'instant' as ScrollBehavior })
+    if (t < 1) scrollTweenRaf = requestAnimationFrame(step)
+  }
+  scrollTweenRaf = requestAnimationFrame(step)
+}
+const cancelTweenOnInput = () => cancelScrollTween()
+
+// Stage CTA — "send him down": tween the page to the summary; the scroll
+// handler below fires the breakout on the way, exactly as a manual scroll
+// would. One code path, no special cases.
+function sendHimDown() {
+  const sec = summaryRef.value
+  if (!sec) return
+  const target = window.scrollY + sec.getBoundingClientRect().top
+  tweenScrollTo(target, 1450)
+}
+
+const PUSH_START = 0.5   // pin progress where the push-out segment begins
+const PUSH_CONTACT = 0.22 // share of the push spent walking to the text
+
+function setupSummaryStage(): (() => void) | null {
+  const sec = summaryRef.value
+  if (!sec) return null
+  const mqMotion = matchMedia('(prefers-reduced-motion: reduce)')
+  let raf = 0
+  let brokeOut = false
+  let pushOn = false
+  let lastY = window.scrollY
+
+  function update() {
+    raf = 0
+    const goingDown = window.scrollY > lastY
+    lastY = window.scrollY
+    if (!sumStaged.value) return
+    const rect = sec!.getBoundingClientRect()
+
+    // Breakout: runway released, summary sliding in — fly the character out
+    // of the stage and glide the page so the landing is framed. The tween
+    // duration matches the flight so both settle together.
+    if (!brokeOut && goingDown && rect.top > 0 && rect.top < innerHeight * 0.92) {
+      brokeOut = true
+      journeyRef.value?.breakout?.(summarySlotRef.value)
+      tweenScrollTo(window.scrollY + rect.top, 1400)
+    }
+
+    // Entered the pin without the flight (anchor jump past the summary,
+    // then scrolled back into it) — he still has to show up, flying in
+    // from wherever the stage is (off-screen above).
+    if (!brokeOut && rect.top <= 0 && rect.bottom >= innerHeight) {
+      brokeOut = true
+      journeyRef.value?.breakout?.(summarySlotRef.value)
+    }
+
+    // Reverse: user scrolled back up toward the stage — fly him home.
+    if (brokeOut && !goingDown && rect.top > innerHeight * 0.45) {
+      brokeOut = false
+      journeyRef.value?.returnToStage?.()
+    }
+
+    const range = rect.height - innerHeight
+    const p = range > 0 ? Math.min(1, Math.max(0, -rect.top / range)) : 0
+    const q = Math.min(1, Math.max(0, (p - PUSH_START) / (1 - PUSH_START)))
+    // Contact-locked choreography: `appr` walks him to the text block,
+    // `exit` moves him AND the text at the same speed once touching.
+    const appr = Math.min(1, q / PUSH_CONTACT)
+    const exit = Math.max(0, (q - PUSH_CONTACT) / (1 - PUSH_CONTACT))
+    sec!.style.setProperty('--sum-appr', appr.toFixed(4))
+    sec!.style.setProperty('--sum-exit', exit.toFixed(4))
+    const wantPush = q > 0.01
+    if (wantPush !== pushOn) {
+      pushOn = wantPush
+      journeyRef.value?.setPushing?.(pushOn)
+    }
+  }
+  function onScroll() { if (!raf) raf = requestAnimationFrame(update) }
+
+  // Non-staged fallback (mobile / reduced motion): SummaryCharacter handles
+  // itself — just fire its entrance jump once it scrolls into view.
+  const io = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) {
+      if (!sumStaged.value && !mqMotion.matches) summaryCharRef.value?.enter?.()
+      io.disconnect()
+    }
+  }, { threshold: 0.35 })
+  io.observe(sec)
+
+  function apply() {
+    const on = !mqMotion.matches && innerWidth > 980 && innerHeight > 560
+    sumStaged.value = on
+    sec!.classList.toggle('sum-staged', on)
+    if (on) {
+      addEventListener('scroll', onScroll, { passive: true })
+      update()
+    } else {
+      removeEventListener('scroll', onScroll)
+      sec!.style.setProperty('--sum-appr', '0')
+      sec!.style.setProperty('--sum-exit', '0')
+      pushOn = false
+      if (brokeOut) {
+        brokeOut = false
+        journeyRef.value?.returnToStage?.()
+      }
+    }
+  }
+  mqMotion.addEventListener?.('change', apply)
+  addEventListener('resize', apply, { passive: true })
+  addEventListener('wheel', cancelTweenOnInput, { passive: true })
+  addEventListener('touchstart', cancelTweenOnInput, { passive: true })
+  addEventListener('keydown', cancelTweenOnInput)
+  apply()
+  return () => {
+    mqMotion.removeEventListener?.('change', apply)
+    removeEventListener('resize', apply)
+    removeEventListener('scroll', onScroll)
+    removeEventListener('wheel', cancelTweenOnInput)
+    removeEventListener('touchstart', cancelTweenOnInput)
+    removeEventListener('keydown', cancelTweenOnInput)
+    cancelScrollTween()
+    io.disconnect()
+    if (raf) cancelAnimationFrame(raf)
+  }
+}
+
+// Scroll-entrance choreography — auto-decorates common content blocks with
+// .rv classes and reveals them as they enter the viewport (one-shot).
+// Elements inside a [data-no-reveal] subtree are left alone — sections with
+// their own scroll engines (hero stack, pinned Education / Experience,
+// sliders) opt out there.
+function setupReveal(): (() => void) | null {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return null
+
+  /* [selector, variant, per-sibling stagger (s)] */
+  const GROUPS: [string, string, number][] = [
+    ['.section-num', 'rv-left', 0],
+    ['.section-title', 'rv-left', 0],
+    ['.section-lede', 'rv-left', 0],
+    ['#summary .body p', 'rv', 0.07],
+    ['.visual-rail .slot', 'rv-right', 0.1],
+    ['.entry-head', 'rv', 0],
+    ['.entry-sub', 'rv', 0.06],
+    ['.bullets > li', 'rv-pop', 0.05],
+    ['.edu-strip .cell', 'rv', 0.07],
+    ['.skill-group .h', 'rv-left', 0],
+    ['.skill-group .skill-tag', 'rv-pop', 0.025],
+    ['.footer h2', 'rv-left', 0],
+    ['.footer .links a', 'rv-fade', 0.07],
+    ['.footer .colophon', 'rv-fade', 0],
+  ]
+  const CAP = 0.45 /* max stagger delay, seconds */
+
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return
+      entry.target.classList.add('rv-in')
+      io.unobserve(entry.target)
+    })
+  }, { rootMargin: '0px 0px -8% 0px', threshold: 0 })
+
+  const seen = new Set<Element>()
+  GROUPS.forEach(([sel, variant, step]) => {
+    const perParent = new Map<Element | null, number>()
+    document.querySelectorAll(sel).forEach((el) => {
+      if (seen.has(el) || el.closest('[data-no-reveal]')) return
+      seen.add(el)
+      const parent = el.parentElement
+      const idx = perParent.get(parent) || 0
+      perParent.set(parent, idx + 1)
+      el.classList.add('rv')
+      if (variant !== 'rv') el.classList.add(variant)
+      const d = Math.min(idx * step, CAP)
+      if (d > 0) (el as HTMLElement).style.setProperty('--rvd', d.toFixed(3) + 's')
+      io.observe(el)
+    })
+  })
+  return () => io.disconnect()
 }
 
 onMounted(() => {
@@ -532,31 +864,48 @@ onMounted(() => {
   )
   targets.forEach((t) => scrollSpy!.observe(t))
 
-  // HeroCharacter now lives inside .hs-sticky (behind the doors). Mount it
-  // as soon as the hero zoom-out commits, so it's warm by the time the user
-  // wheels the doors open.
-  const reveal = heroStickyRef.value
-  if (reveal) {
-    revealObs = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting)) {
-          characterVisible.value = true
-          revealObs?.disconnect()
-          revealObs = null
-        }
-      },
-      { rootMargin: '200px 0px' }
-    )
-    revealObs.observe(reveal)
+  // HeroCharacter lives inside .hs-sticky (behind the doors). Warm it up
+  // early so it's ready when the doors part — but AFTER first paint and the
+  // hero's own assets. The old IntersectionObserver fired immediately (the
+  // sticky stage is in the viewport from load), so the ~4MB GLB download +
+  // shader compile competed with the hero photos and fonts during initial
+  // load. The doors are still hundreds of vh of scroll away; if the user
+  // outruns the idle timer, characterDoorRef mounts it instantly anyway.
+  const warmCharacter = () => { characterVisible.value = true }
+  const scheduleWarm = () => {
+    if (typeof window.requestIdleCallback === 'function') {
+      warmIdleId = window.requestIdleCallback(warmCharacter, { timeout: 4000 })
+    } else {
+      warmTimerId = window.setTimeout(warmCharacter, 1500)
+    }
+  }
+  if (document.readyState === 'complete') {
+    scheduleWarm()
+  } else {
+    window.addEventListener('load', scheduleWarm, { once: true })
+    warmLoadListener = scheduleWarm
   }
 
+  // Pinned Education / Experience stages + scroll-entrance reveals.
+  for (const setup of [setupSummaryStage, setupEducationPin, setupExperiencePin, setupReveal]) {
+    const cleanup = setup()
+    if (cleanup) sectionCleanups.push(cleanup)
+  }
 })
 
 onBeforeUnmount(() => {
+  sectionCleanups.forEach((fn) => fn())
+  sectionCleanups.length = 0
   scrollSpy?.disconnect()
   scrollSpy = null
-  revealObs?.disconnect()
-  revealObs = null
+  if (warmIdleId !== null && typeof window.cancelIdleCallback === 'function') {
+    window.cancelIdleCallback(warmIdleId)
+  }
+  warmIdleId = null
+  if (warmTimerId !== null) clearTimeout(warmTimerId)
+  warmTimerId = null
+  if (warmLoadListener) window.removeEventListener('load', warmLoadListener)
+  warmLoadListener = null
   window.removeEventListener('scroll', onHeroScroll)
   window.removeEventListener('resize', measureHeroSlot)
   window.removeEventListener('resize', syncTopbarH)
@@ -599,17 +948,23 @@ onBeforeUnmount(() => {
          Page-1 (HeroSection) sits on top of Page-2 (#intro-message).
          On scroll, Page-1 zooms out and lands inside the 4:5 slot on Page-2,
          desaturating to a mid-tone. -->
-    <div ref="heroDriverRef" class="hs-driver" :style="{ '--door-progress': doorProgressRef }">
+    <div ref="heroDriverRef" class="hs-driver" data-no-reveal :style="{ '--door-progress': doorProgressRef }">
       <div ref="heroStickyRef" class="hs-sticky">
         <!-- P3 (behind everything) — HeroCharacter + reveal overlay copy.
              Mounts lazily once the signature is mostly done, so it's warm
              behind the doors when they begin to part. -->
         <div class="cr-bg cr-bg--in-stage">
-          <BeamsBackground class="cr-beams" intensity="subtle" />
-          <HeroCharacter
+          <!-- :paused while the doors are fully shut — everything in .cr-bg
+               is occluded by .hs-front, so beams/character skip GPU work
+               until their first potentially-visible pixel. -->
+          <BeamsBackground class="cr-beams" intensity="subtle" :paused="doorProgressRef < 0.001" />
+          <JourneyCharacter
             v-if="characterVisible || characterDoorRef"
+            ref="journeyRef"
             class="cr-character"
             :camera-zoom="1.25"
+            :paused="doorProgressRef < 0.001"
+            @state="onCharState"
           />
           <div v-else class="cr-character-placeholder" aria-hidden="true"></div>
           <div class="cr-overlay">
@@ -617,7 +972,13 @@ onBeforeUnmount(() => {
             <div></div>
             <div class="cr-bottom">
               <h2 class="cr-headline">A <em>moving</em><br />operator — not a still one.</h2>
-              <p class="cr-meta">Scroll to enter the work →</p>
+              <div class="cr-meta-stack">
+                <p class="cr-hint"><span class="cr-hint-dot" aria-hidden="true"></span>Move your cursor — he follows</p>
+                <button v-if="sumStaged" type="button" class="cr-cta" @click="sendHimDown">
+                  Send him down<span class="cr-cta-arrow" aria-hidden="true">↓</span>
+                </button>
+                <p v-else class="cr-meta">Scroll to enter the work →</p>
+              </div>
             </div>
           </div>
         </div>
@@ -735,536 +1096,269 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Summary -->
-    <section id="summary" class="section">
+    <!-- Summary — pinned stage: text left, interactive character right.
+         The character jumps in from the door stage, takes action-button
+         requests while pinned, then pushes the text off-screen left during
+         the final runway segment to hand over to Education. -->
+    <section id="summary" ref="summaryRef" class="section summary-driver">
+      <div class="summary-pin">
+      <div class="summary-grid">
       <div class="body">
-        <span class="section-num">·</span>
+        <span class="section-num">00 · Summary</span>
         <h2 class="section-title">Summary</h2>
         <p>
-          Mechanical Engineer from IIT Gandhinagar (Gold Medalist, CPI 8.18) with hands-on hardware build experience — go-kart fabrication from raw stock, control system prototyping, and on-ground vendor sourcing at a consumer hardware startup.
+          Mechanical Engineer from IIT Gandhinagar (Gold Medalist, CPI 8.18) with hands-on hardware build experience — a concept-to-drive petrol go-kart, an energy-efficient control-system prototype, and on-ground vendor sourcing and pre-production for a consumer hardware startup.
         </p>
         <p>
-          As Welfare Secretary at IITGN, served as the sole operational bridge between a 2,000+ student community and the institute administration — coordinating a 25-member council across hostels, mess, health services, and campus outlets, and running a structured trial-based vendor selection process replacing an unstructured legacy approach.
+          As Welfare Secretary at IITGN, held operational and financial responsibility for initiatives serving a <strong>3,600+ student community</strong> — overseeing <strong>₹80L+ budgets</strong>, procurement and vendor evaluations, and teams of up to 104 members across large-scale campus programs.
         </p>
         <p>
-          Three years at Axis Bank applying that engineering and operations instinct to building infrastructure from zero: designed a <strong>modular production framework (7 reusable modules) adopted unmodified by an external engineering team</strong>, owned an 18-month, 4-team vendor program with TCS as sole internal coordinator, <em>cut a business-critical monthly pipeline turnaround by 90% (2–3 days → 3 hours)</em>, and held 100% production continuity as solo operator through a complete team transition.
+          Three years at Axis Bank applying the same first-principles, systems-thinking approach to business-critical infrastructure: architected a <strong>modular PySpark framework adopted across multiple production systems</strong>, <em>cut a key profitability pipeline turnaround by 90% (2–3 days → 3 hours)</em>, and built a unified profitability layer spanning ~6 crore accounts and 30+ products. Led an 18-month automation program across four internal teams and an external engineering team, and sustained the full modelling portfolio solo through a complete team transition with zero delivery disruptions.
         </p>
         <p>
-          Transitioning into product operations at hardware-first companies.
+          Seeking to apply systems-thinking, operational execution, and cross-functional leadership to build and scale product-driven businesses.
         </p>
       </div>
-      <div class="stack-right">
-        <div class="slot slot-portrait">
-          <div class="slot-body">
-            <span class="slot-kind" data-kind="PHOTO">Photo</span>
-            <span class="slot-name">Portrait / hero-character base</span>
-            <span class="slot-aspect">4 : 5 · ≥ 1200px tall</span>
-          </div>
+      <div class="summary-char" data-no-reveal>
+        <!-- Staged: an empty slot the flying character lands on (the canvas
+             is the fixed overlay from JourneyCharacter — it projects him
+             onto this rect every frame, so CSS transforms drag him along).
+             Non-staged (mobile / reduced motion): self-contained fallback. -->
+        <div ref="summarySlotRef" class="char-slot">
+          <div class="char-shadow" aria-hidden="true"></div>
+          <SummaryCharacter v-if="!sumStaged" ref="summaryCharRef" />
         </div>
-        <div class="slot" style="aspect-ratio: 4/3; min-height: 220px;">
-          <div class="slot-body">
-            <span class="slot-kind" data-kind="ANIM">Animation</span>
-            <span class="slot-name">Signature / handwriting reveal</span>
-            <span class="slot-aspect">4 : 3 · Lottie or SVG path</span>
-          </div>
+        <div
+          v-if="sumStaged"
+          class="summary-actions"
+          :class="{ 'is-live': charState.ready && charState.phase === 'summary' }"
+          aria-label="Character actions"
+        >
+          <button type="button" class="sum-act" :disabled="charState.busy || charState.pushing" @click="playCharAction('jump')">
+            <span class="sum-act-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 19V5" /><path d="m5 12 7-7 7 7" />
+              </svg>
+            </span>
+            <span class="sum-act-label">Jump</span>
+          </button>
+          <button type="button" class="sum-act" :disabled="charState.busy || charState.pushing" @click="playCharAction('back_flip')">
+            <span class="sum-act-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 12a9 9 0 1 1 3.6 7.2" /><path d="M3 22v-6h6" />
+              </svg>
+            </span>
+            <span class="sum-act-label">Flip</span>
+          </button>
+          <button type="button" class="sum-act" :disabled="charState.busy || charState.pushing" @click="playCharAction('dancing')">
+            <span class="sum-act-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+              </svg>
+            </span>
+            <span class="sum-act-label">Dance</span>
+          </button>
+          <button type="button" class="sum-act" :disabled="charState.busy || charState.pushing" @click="playCharAction('push_ups')">
+            <span class="sum-act-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 14h2l2-3 3 5 3-7 2 5h4" /><path d="M3 19h18" />
+              </svg>
+            </span>
+            <span class="sum-act-label">Push-ups</span>
+          </button>
         </div>
+      </div>
+      </div>
       </div>
     </section>
 
-    <!-- Education -->
-    <section id="education" class="section">
-      <span class="section-num">01 · Education</span>
-      <h2 class="section-title">Education</h2>
+    <!-- Education — pinned staged reveal -->
+    <section id="education" ref="eduRef" class="section" data-no-reveal>
+      <div class="edu-pin">
+        <span class="section-num">01 · Education</span>
+        <h2 class="section-title">Education</h2>
 
-      <div class="split">
-        <div>
-          <article class="entry">
-            <div class="entry-head">
-              <p class="entry-title">Indian Institute of Technology Gandhinagar (IITGN)</p>
-              <span class="entry-when">July, 2019 — July, 2023 · Gujarat</span>
-            </div>
-            <p class="entry-sub">Bachelor of Technology, Mechanical Engineering <span class="pipe">·</span> CPI: 8.18 / 10 <span class="pipe">·</span> Dean's List (Sem 4)</p>
-            <p class="entry-sub" style="color: var(--ink);">
-              <strong style="font-weight:700;">Gold Medalist — Outstanding Social Service</strong> <span class="pipe">·</span> Convocation 2023
-            </p>
+        <div class="edu-name">
+          <p class="edu-name-line"><mark class="iit-mark">Indian Institute of Technology</mark></p>
+          <p class="edu-name-line"><mark class="iit-mark">Gandhinagar</mark></p>
+          <p class="edu-name-meta"><span class="edu-abbr">IITGN</span><span>July, 2019 — July, 2023 · Gujarat</span></p>
+          <p class="entry-sub edu-detail edu-degree" style="--d: 0;">Bachelor of Technology, Mechanical Engineering</p>
+          <p class="entry-sub edu-detail edu-gold" style="--d: 1;">
+            <strong>Gold Medalist — Outstanding Social Service</strong>
+          </p>
+        </div>
 
-            <div class="edu-strip">
+        <div class="edu-details">
+          <div>
+            <div class="edu-strip edu-detail" style="--d: 2;">
               <div class="cell"><span class="k">CPI</span><span class="v">8.18 / 10</span></div>
               <div class="cell"><span class="k">Dean's List</span><span class="v">Sem 4 · 2021</span></div>
               <div class="cell"><span class="k">Honour</span><span class="v">Gold Medal '23</span></div>
               <div class="cell"><span class="k">Duration</span><span class="v">4 years</span></div>
             </div>
-          </article>
-        </div>
-
-        <div class="visual-rail">
-          <div class="slot" style="aspect-ratio: 4/3;">
-            <div class="slot-body">
-              <span class="slot-kind" data-kind="3D">3D</span>
-              <span class="slot-name">IITGN campus / academic block model</span>
-              <span class="slot-aspect">4 : 3</span>
-            </div>
           </div>
-          <div class="slot accent" style="aspect-ratio: 1/1;">
-            <div class="slot-body">
-              <span class="slot-kind" data-kind="3D">3D</span>
-              <span class="slot-name">Gold Medal — Outstanding Social Service</span>
-              <span class="slot-aspect">1 : 1 · medallion rotation</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
 
-    <!-- Work Experience -->
-    <section id="experience" class="section">
-      <span class="section-num">02 · Work Experience</span>
-      <h2 class="section-title">Work Experience</h2>
-
-      <div class="split flip">
-        <div class="visual-rail">
-          <div class="slot dark" style="aspect-ratio: 3/4; min-height: 380px;">
-            <div class="slot-body">
-              <span class="slot-kind" data-kind="PHOTO">Photo</span>
-              <span class="slot-name">Axis Bank Mumbai HQ · workspace</span>
-              <span class="slot-aspect">3 : 4 · environmental shot</span>
-            </div>
-          </div>
-          <div class="slot" style="aspect-ratio: 1/1;">
-            <div class="slot-body">
-              <span class="slot-kind" data-kind="ANIM">Animation</span>
-              <span class="slot-name">Forecasting framework — module loop</span>
-              <span class="slot-aspect">1 : 1 · looping diagram</span>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <article class="entry">
-            <div class="entry-head">
-              <p class="entry-title">Financial Modelling Team — Operations &amp; Framework Build, @Axis Bank</p>
-            </div>
-            <p class="entry-sub">
-              <span>Senior Manager (Promoted)</span>
-              <span class="pipe">·</span>
-              <span>May, 2025 — Present · Mumbai</span>
-            </p>
-            <p class="entry-sub">
-              <span>Manager</span>
-              <span class="pipe">·</span>
-              <span>July, 2023 — April, 2025 · Mumbai</span>
-            </p>
-          </article>
-
-          <article class="entry">
-            <div class="entry-head">
-              <p class="entry-title">Product Development Intern — Prototyping &amp; Vendor Sourcing, @SmartoKids</p>
-              <span class="entry-when">May, 2022 — July, 2022 · Ahmedabad</span>
-            </div>
-          </article>
-
-          <article class="entry">
-            <div class="entry-head">
-              <p class="entry-title">Vocational Trainee, Industrial Systems Exposure, @Tata Steel</p>
-              <span class="entry-when">May, 2021 — July, 2021 · Virtual</span>
-            </div>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <!-- Corporate Projects -->
-    <section id="corporate" class="section">
-      <span class="section-num">03 · Corporate Projects</span>
-      <h2 class="section-title">Corporate<br /><span class="accent-line">Projects</span></h2>
-      <p class="section-lede">
-        Eight programs across Axis Bank, SmartoKids and Tata Steel — modular forecasting frameworks, multi-team vendor coordination, pipeline rebuilds, and industrial systems study. Every record below uses the role, organisation, dates and bullets as listed on the master résumé.
-      </p>
-
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Modular Production Framework — Built from Zero across Retail Asset Models</p>
-          <span class="entry-when">July, 2023 — Present</span>
-        </div>
-        <p class="entry-sub"><span>Manager / Senior Manager</span><span class="pipe">|</span><span>Axis Bank</span></p>
-
-        <div class="split" style="margin-top: 1rem;">
-          <ul class="bullets">
-            <li>Architected and shipped a modular PySpark forecasting framework from zero — 7 reusable modules driven by a single parameter file — enabling any product model to run through the same scalable production pipeline with zero structural rework; framework was adopted unmodified by the TCS engineering team, validating the generalised architecture.</li>
-            <li>Migrated 3 product models end-to-end (Personal Loan, Auto Loan, Commercial Vehicle) from legacy SAS to PySpark — rebuilt all production logic and historical curves from scratch, eliminated all spreadsheet dependencies, and transitioned every model to governed star-schema tables for repeatable, audit-ready production cycles.</li>
-            <li><strong>Compressed end-to-end model upgrade cycles from 2–3 weeks to 2–4 days</strong> (an 80%+ reduction including upstream dependency coordination) through the modular framework, parameter-driven inputs, and standardised data plumbing — once dependencies were pre-sorted, single-day modify-and-release cycles became routine for targeted updates.</li>
-            <li>Engineered two recency-adjustment modules and a loss-balance calculator from scratch — the calculator required a novel data-mapping strategy after the upstream reporting dashboard was decommissioned, preserving full system integrity with zero data loss across all downstream outputs.</li>
-            <li>Mentored a junior team member to first production deployment on the Education Loan model in ~5 weeks against a typical from-scratch build of 3–4 months — the generic modular framework cut onboarding-to-delivery time by ~75%.</li>
-            <li>Owned end-to-end production delivery of 9 quarterly models (4 Retail Asset + 5 Agri products) as the sole accountable owner per cycle — stakeholder management across Business, Analytics, and Finance sign-off; production deployments through Jenkins CI/CD with version control on BitBucket.</li>
-            <li>Standardised process design and delivery methodology across all 9 models — logic upgrades rollable across the full portfolio in a single production cycle, eliminating per-model rework and enabling same-cycle updates across all products without regression.</li>
-          </ul>
-
-          <div class="visual-rail">
-            <div class="slot" style="aspect-ratio: 4/3;">
-              <div class="slot-body">
-                <span class="slot-kind" data-kind="ANIM">Diagram</span>
-                <span class="slot-name">7-module framework — single param file → 9 models</span>
-                <span class="slot-aspect">4 : 3 · architecture loop</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </article>
-
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Valuation Model &amp; Profit Score Automation with TCS — Program Ownership across 4 Internal Teams</p>
-          <span class="entry-when">April, 2024 — December, 2025</span>
-        </div>
-        <p class="entry-sub"><span>Senior Manager</span><span class="pipe">|</span><span>Axis Bank</span></p>
-
-        <div class="split flip" style="margin-top: 1rem;">
-          <div class="visual-rail">
-            <div class="slot" style="aspect-ratio: 1/1;">
-              <div class="slot-body">
-                <span class="slot-kind" data-kind="3D">3D / Diagram</span>
-                <span class="slot-name">4 internal teams + TCS engineering — coordination map</span>
-                <span class="slot-aspect">1 : 1</span>
-              </div>
-            </div>
-          </div>
-          <ul class="bullets">
-            <li>Sole internal program owner — no co-owner — across an 18-month multi-team vendor engagement with <strong>TCS</strong>: coordinated 4 internal teams (Business, Analytics, Data Engineering, Financial Modelling) and a 6–8 person external engineering team from requirements through production deployment, running a 1-year valuation model automation track and a 6-month profitability score automation track concurrently without a dedicated program manager role.</li>
-            <li>Translated internal modelling logic into precise vendor framework requirements; reviewed every iteration, caught edge cases that would have caused silent downstream errors, and gated production stability before each release — 8 systems delivered under this program (2 valuation models + 6 profit scores: CCPS, ATM, TD, MAB, CVS, Cash Profitability), as sole internal coordinator.</li>
-            <li>Supplied 7 reusable PySpark modules from my own migration framework directly to the TCS engineering team — adopted without modification; the generalised architecture of my framework independently converged with TCS's automation design, cutting vendor onboarding time and preserving internal methodology end-to-end across all automated systems.</li>
-            <li>Genericised the Personal Loan assumption builder on the vendor framework — reverse-engineered existing business logic across dimensional splits, weighted input derivations, risk factor treatment, and cashflow computation; extended a single-product framework to support Personal Loans with product-level logic isolated and configurable, eliminating recurring manual input steps from every monthly production cycle.</li>
-            <li>Designed and enforced a data quality and validation layer across both automation tracks — preventing downstream breakages across 12+ monthly production cycles; extended the system for 2+ years of retro-run capability, enabling full historical back-population at program launch.</li>
-            <li>Authored strategic review packs and model performance briefings consumed directly in executive and investor-facing presentations — scenario analysis, output reconciliation, and quantitative backing for senior leadership decisions.</li>
-          </ul>
-        </div>
-      </article>
-
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Credit Card Profitability Pipeline — 90% Turnaround Reduction</p>
-          <span class="entry-when">May, 2023 — Present</span>
-        </div>
-        <p class="entry-sub"><span>Manager / Senior Manager</span><span class="pipe">|</span><span>Axis Bank</span></p>
-
-        <div class="split" style="margin-top: 1rem;">
-          <ul class="bullets">
-            <li><em>Cut monthly delivery turnaround by over 90%</em> (2–3 days → 3 hours) by redesigning the CCPS data pipeline and automating input validation — eliminated a recurring manual bottleneck and compressed the decision cycle for Business Analytics and Finance across 12+ monthly production cycles.</li>
-            <li>Owned end-to-end monthly production delivery of the Credit Card Profit Score (CCPS) — an account-level profitability model combining revenue, reward cost, credit cost, and fee components — whose outputs directly drove performance targets for Credit Card leadership and field sales teams.</li>
-            <li>Maintained continuous output integrity across 12+ production cycles by tracing and correcting logic failures at source — root causes included zero-output components from source mapping gaps, cost reclassification following upstream booking-method changes, and component corrections preventing output inflation from unrelated data entries; each fix applied in isolation without disrupting downstream outputs or requiring a full pipeline rerun.</li>
-            <li>Corrected PBT calculation logic across 2 pipeline migrations (Informatica → TCS framework) — reconciled with Analytics and Data Engineering to prevent output drift; corrections covered credit cost true-up, reward cost bifurcation, fee derecognition, and netting-off components.</li>
-            <li>Executed back-corrections across 13+ months of historical data following logic fixes — ran data quality checks at each stage and aligned all downstream consumer teams on output changes before resuming regular production runs; system validated for 2-year retro-run capability.</li>
-          </ul>
-
-          <div class="visual-rail">
-            <div class="slot" style="aspect-ratio: 4/3;">
-              <div class="slot-body">
-                <span class="slot-kind" data-kind="ANIM">Animation</span>
-                <span class="slot-name">Turnaround compression: 2–3 days → 3 hours</span>
-                <span class="slot-aspect">4 : 3 · before/after</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </article>
-
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Solo Operational Ownership Through Team Transition</p>
-          <span class="entry-when">January, 2025 — April, 2025</span>
-        </div>
-        <p class="entry-sub"><span>Manager</span><span class="pipe">|</span><span>Axis Bank</span></p>
-
-        <ul class="bullets">
-          <li>Held full delivery of the Financial Modelling portfolio as sole owner for 3 months during a team transition — <strong>zero missed deadlines, zero production disruptions, no external ramp-up or support</strong>.</li>
-          <li>Managed 10+ concurrent active deliverables simultaneously — production releases for 4 own valuation models, CCPS, and NCL multiplier; handoffs of 4 profit scores to BA teams (ATM, TD, MAB, TRV); ownership transfers of 5 Agri models to incoming team members — while managing stakeholder expectations across Business and Analytics throughout.</li>
-          <li>Led the team rebuild end-to-end once new hires arrived — designed a two-directional structured handover, authored SOPs covering production pipeline architecture, and ran knowledge transfer sessions that brought the new team to independent delivery within their first quarter.</li>
-        </ul>
-      </article>
-
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">NCL Multiplier — Monthly Pipeline Operations &amp; Root-Cause Debugging</p>
-          <span class="entry-when">January, 2025 — Present</span>
-        </div>
-        <p class="entry-sub"><span>Senior Manager</span><span class="pipe">|</span><span>Axis Bank</span></p>
-
-        <div class="split flip" style="margin-top: 1rem;">
-          <div class="visual-rail">
-            <div class="slot" style="aspect-ratio: 1/1;">
-              <div class="slot-body">
-                <span class="slot-kind" data-kind="ANIM">Visualisation</span>
-                <span class="slot-name">50 lakh+ accounts · 8 products · monthly cycle</span>
-                <span class="slot-aspect">1 : 1 · scale visual</span>
-              </div>
-            </div>
-          </div>
-          <ul class="bullets">
-            <li>Owned end-to-end monthly production execution of a multi-product loss rate pipeline <strong>covering 8 products and processing 50 lakh+ accounts per monthly run</strong> — account-level data pulls, product-bucket standardisation, vintage tracking, fresh slippage identification, overdue balance computation, and derivation of annualised outputs (fresh slippages, post-linkage loss rates, post-recovery loss rates, and bucket multipliers) — with zero missed release cycles across the full ownership period.</li>
-            <li>Built a formula-driven validation layer from scratch for retro-run reconciliation — outputs reconcilable line-by-line per product and period rather than treated as a black box; provided the audit trail needed to communicate output changes credibly to downstream teams.</li>
-            <li>Traced a recurring output discrepancy to an upstream source-data coverage gap — identified root cause through systematic data tracing, confirmed scope of impact, and delivered a documented root cause analysis that backed stakeholder communication rather than merely flagging the anomaly.</li>
-            <li>Identified and corrected a product-specific code error causing downstream report generation failures — isolated the fault, applied targeted logic correction, validated outputs against expected ranges, and restored uninterrupted monthly production delivery without requiring a full system rebuild.</li>
-          </ul>
-        </div>
-      </article>
-
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Unified Profitability Infrastructure — Systems Design from Fragmented Sources</p>
-          <span class="entry-when">April, 2025 — Present</span>
-        </div>
-        <p class="entry-sub"><span>Senior Manager</span><span class="pipe">|</span><span>Axis Bank</span></p>
-
-        <ul class="bullets">
-          <li>Designed and shipped a unified, account-level profitability master from zero — <strong>processes revenue, cost, PBT, RAROC, and NCL across ~6 crore accounts spanning 30+ products</strong> in a single harmonised structure, replacing a workflow that previously required manual reconciliation across disconnected sources before any cross-product view was possible.</li>
-          <li>Diagnosed the structural data problem: profitability outputs existed across disconnected frameworks with inconsistent logic, fragmented customer-base coverage, and no unified account-level view — making cross-product comparison unreliable and consumption-unfriendly for downstream analytics and reporting teams.</li>
-          <li>Mapped the customer base across multiple existing profitability frameworks, matched records back to their source frameworks, and connected account populations that fell outside the coverage of any prior framework — improving overall completeness of the profitability universe.</li>
-          <li>Built the bridging logic that brings fragmented frameworks together into a single consumption-ready table — standardised revenue, fee, cost, expected loss, and profit components; resolved product-mapping inconsistencies and overlaps at both customer and account level to ensure completeness without double-counting.</li>
-          <li>Delivered a consumption-ready output structure that downstream analytics and reporting teams could query directly — eliminated the manual reconciliation step from every cross-product report.</li>
-        </ul>
-      </article>
-
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Product Development — Prototyping, Iteration, and On-Ground Vendor Sourcing</p>
-          <span class="entry-when">May, 2022 — July, 2022</span>
-        </div>
-        <p class="entry-sub">
-          <a href="https://drive.google.com/file/d/1nHJQMDm9WLH55x5v1CwYZo8Knen_4E2s/view" target="_blank" rel="noopener" style="text-decoration:underline;">Internship Certificate</a>
-          <span class="pipe">|</span>
-          <span>SmartoKids Commerce Pvt. Ltd.</span>
-        </p>
-
-        <div class="split" style="margin-top: 1rem;">
-          <ul class="bullets">
-            <li>Reverse-engineered 10+ competing hardware products to extract reusable design patterns (features, materials, assembly approach) and proposed new concepts within explicit cost and production constraints — directly informing the product development roadmap.</li>
-            <li>Led rapid prototyping from concept to testable builds — created CAD models and fabricated iterations using laser cutters, MDF sheets, and 3D printing across iteration cycles to validate feasibility before committing any design to production.</li>
-            <li>Managed on-ground vendor relationships end-to-end: visited suppliers, assessed capabilities and constraints, compared quotes, and supported negotiations to align cost, quality, and timelines; gained direct exposure to hardware procurement and supply chain decisions that precede production.</li>
-            <li>Built a structured competitor SKU catalog by web-scraping e-commerce listings; organised by category, price bands, materials, and feature-set to support ideation and prioritisation decisions.</li>
-          </ul>
-
-          <div class="visual-rail">
+          <div class="edu-visuals edu-detail" style="--d: 3;">
             <div class="slot" style="aspect-ratio: 4/3;">
               <div class="slot-body">
                 <span class="slot-kind" data-kind="3D">3D</span>
-                <span class="slot-name">SmartoKids prototype — CAD / MDF iteration</span>
+                <span class="slot-name">IITGN campus / academic block model</span>
                 <span class="slot-aspect">4 : 3</span>
               </div>
             </div>
+            <div class="slot accent" style="aspect-ratio: 1/1;">
+              <div class="slot-body">
+                <span class="slot-kind" data-kind="3D">3D</span>
+                <span class="slot-name">Gold Medal — Outstanding Social Service</span>
+                <span class="slot-aspect">1 : 1 · medallion rotation</span>
+              </div>
+            </div>
           </div>
         </div>
-      </article>
-
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Industrial Systems Study — Bulk Material Handling Equipment at Tata Steel</p>
-          <span class="entry-when">May, 2021 — July, 2021</span>
-        </div>
-        <p class="entry-sub">
-          <span>Vocational Trainee</span>
-          <span class="pipe">|</span>
-          <a href="https://drive.google.com/file/d/1wA0e7VINckpSwxrobc2dkNCyXB_IlRlZ/view" target="_blank" rel="noopener" style="text-decoration:underline;">Certificate</a>
-          <span class="pipe">|</span>
-          <a href="https://drive.google.com/file/d/1FeGPjXIIYyOQgPuM2jX-9NvQTsRHz3r9/view" target="_blank" rel="noopener" style="text-decoration:underline;">Report</a>
-        </p>
-
-        <ul class="bullets">
-          <li>Studied bulk material handling equipment at a live Tata Steel plant — focused on belt conveyor systems covering construction (carcass, cover layers, splicing methods), idler types (troughing, impact, return), drive arrangements (single drum, snubbed, tandem), and power unit selection for continuous high-load operation.</li>
-          <li>Authored a structured technical report translating plant observations into decision-oriented documentation — compared vulcanisation vs. mechanical splicing tradeoffs (installation time, failure modes, operating conditions), analysed belt inclination limits and surcharge angles for different bulk solids, and produced selection guidance grounded in operational reliability criteria.</li>
-        </ul>
-      </article>
+      </div>
     </section>
 
-    <!-- Academic Projects -->
-    <section id="academic" class="section">
+    <!-- Work Experience — pinned company spotlight -->
+    <section id="experience" ref="xpRef" class="section" data-no-reveal>
+      <div class="xp-pin">
+        <div class="xp-head-row">
+          <div class="xp-head-titles">
+            <span class="section-num">02 · Work Experience</span>
+            <h2 class="section-title">Work<br /><span class="accent-line">Experience</span></h2>
+          </div>
+          <div class="xp-progress" aria-hidden="true">
+            <span class="xp-prog-meta">2021 — Present · 03 Employers</span>
+            <div class="xp-prog-track">
+              <span class="xp-tick"></span>
+              <span class="xp-tick"></span>
+              <span class="xp-tick"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="xp-stage">
+          <ol class="xp-companies" aria-hidden="true">
+            <li class="xp-co">
+              <span class="xp-co-num">01 — 2023 · Present</span>
+              <p class="xp-co-name"><mark class="co-mark">Axis Bank</mark></p>
+            </li>
+            <li class="xp-co">
+              <span class="xp-co-num">02 — 2022</span>
+              <p class="xp-co-name"><mark class="co-mark">SmartoKids</mark></p>
+            </li>
+            <li class="xp-co">
+              <span class="xp-co-num">03 — 2021</span>
+              <p class="xp-co-name"><mark class="co-mark">Tata Steel</mark></p>
+            </li>
+          </ol>
+
+          <div class="xp-panels">
+            <article class="xp-panel">
+              <span class="xp-index" aria-hidden="true">01</span>
+              <p class="xp-panel-co"><mark class="co-mark">Axis Bank</mark></p>
+              <header class="xp-head">
+                <span class="xp-badge live">Current · Valuation Modelling Team</span>
+                <h3 class="xp-role">Operations &amp; Framework Build</h3>
+              </header>
+              <div class="xp-datelines">
+                <div class="row">
+                  <span class="who">Senior Manager <em class="promo">Promoted</em></span>
+                  <span class="when">May, 2025 — Present</span>
+                </div>
+                <div class="row">
+                  <span class="who">Manager</span>
+                  <span class="when">July, 2023 — April, 2025 · Mumbai</span>
+                </div>
+              </div>
+              <p class="xp-summary">Sole accountable owner of 9 quarterly production models. Architected the modular PySpark forecasting framework adopted unmodified by an external TCS engineering team.</p>
+              <div class="xp-stats">
+                <div class="cell"><span class="k">CCPS turnaround</span><span class="v">−90% · 3 hrs</span></div>
+                <div class="cell"><span class="k">Models owned</span><span class="v">9 quarterly</span></div>
+              </div>
+              <div class="slot xp-slot">
+                <div class="slot-body">
+                  <span class="slot-kind" data-kind="PHOTO">Photo</span>
+                  <span class="slot-name">Axis Bank Mumbai HQ · workspace</span>
+                  <span class="slot-aspect">wide · environmental shot</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="xp-panel">
+              <span class="xp-index" aria-hidden="true">02</span>
+              <p class="xp-panel-co"><mark class="co-mark">SmartoKids</mark></p>
+              <header class="xp-head">
+                <span class="xp-badge">Internship · Product Development</span>
+                <h3 class="xp-role">Prototyping &amp; Vendor Sourcing</h3>
+              </header>
+              <div class="xp-datelines">
+                <div class="row">
+                  <span class="who">Product Development Intern</span>
+                  <span class="when">May, 2022 — July, 2022 · Ahmedabad</span>
+                </div>
+              </div>
+              <p class="xp-summary">Reverse-engineered 10+ competing hardware products, ran rapid prototyping concept-to-build (CAD, laser, MDF, 3D print), and managed on-ground vendor sourcing end-to-end.</p>
+              <div class="xp-stats">
+                <div class="cell"><span class="k">Competitor SKUs</span><span class="v">10+ analysed</span></div>
+                <div class="cell"><span class="k">Prototyping</span><span class="v">Concept → build</span></div>
+              </div>
+              <div class="slot xp-slot">
+                <div class="slot-body">
+                  <span class="slot-kind" data-kind="PHOTO">Photo</span>
+                  <span class="slot-name">Prototype bench — CAD · laser · 3D print</span>
+                  <span class="slot-aspect">wide · workshop shot</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="xp-panel">
+              <span class="xp-index" aria-hidden="true">03</span>
+              <p class="xp-panel-co"><mark class="co-mark">Tata Steel</mark></p>
+              <header class="xp-head">
+                <span class="xp-badge">Vocational Training · Live Plant</span>
+                <h3 class="xp-role">Industrial Systems Exposure</h3>
+              </header>
+              <div class="xp-datelines">
+                <div class="row">
+                  <span class="who">Vocational Trainee</span>
+                  <span class="when">May, 2021 — July, 2021 · Virtual</span>
+                </div>
+              </div>
+              <p class="xp-summary">Studied bulk-material handling at a live plant — belt-conveyor construction, drive arrangements, power-unit selection — and authored a decision-oriented technical report.</p>
+              <div class="xp-stats">
+                <div class="cell"><span class="k">Focus</span><span class="v">Bulk handling</span></div>
+                <div class="cell"><span class="k">Output</span><span class="v">Technical report</span></div>
+              </div>
+              <div class="slot xp-slot">
+                <div class="slot-body">
+                  <span class="slot-kind" data-kind="PHOTO">Photo</span>
+                  <span class="slot-name">Plant line — belt conveyors</span>
+                  <span class="slot-aspect">wide · industrial shot</span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Corporate Projects (5) — modular animated slider -->
+    <section id="corporate" class="cs-wrap">
+      <div class="stage-head">
+        <span class="section-num">03 · Corporate Projects</span>
+        <h2 class="section-title">Corporate<br /><span class="accent-line">Projects</span></h2>
+        <p class="section-lede">5 programs · Axis Bank &amp; SmartoKids · 2022 – Present</p>
+      </div>
+      <CorporateSlider />
+    </section>
+
+    <!-- Academic Projects (6) — timed-cards showcase -->
+    <section id="academic" class="section tc-section">
       <span class="section-num">03.b · Academic Projects</span>
       <h2 class="section-title">Academic<br /><span class="accent-line">Projects</span></h2>
-      <p class="section-lede">
-        Six physical hardware builds at IIT Gandhinagar — each one a perfect target for an interactive 3D model alongside the writeup.
-      </p>
+      <p class="section-lede tc-lede">6 projects · IIT Gandhinagar · 2021 – 2022</p>
 
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Go-Kart — Full System Build from Raw Stock to Live Drive</p>
-          <span class="entry-when">March, 2022 — April, 2022</span>
-        </div>
-        <p class="entry-sub">
-          <a href="https://drive.google.com/file/d/1ISyMh713Xe9EiCL6Ku4CpUzXcwW-FJU1/view" target="_blank" rel="noopener" style="text-decoration:underline;">Project Video</a>
-          <span class="pipe">|</span>
-          <a href="https://drive.google.com/file/d/1tHUv4p33o5MtHJyL4L_5K1UbzSbgrafH/view" target="_blank" rel="noopener" style="text-decoration:underline;">Team</a>
-          <span class="pipe">|</span>
-          <span>Advisor: Prof. Harish PM</span>
-        </p>
-
-        <div class="split" style="margin-top: 1rem;">
-          <ul class="bullets">
-            <li>Built a go-kart from scratch as part of a 10-member team: converted an initial concept into a build-ready design by finalising key dimensions, creating the full CAD, and planning the fabrication and assembly sequence.</li>
-            <li>Fabricated the frame and chassis from lab stock using cutting, sanding, welding, lathe work, grinding, and precision fitting — from raw material to a drive-ready structure; sourced engine from Delhi, adapted a bicycle braking system as a cost-effective constraint-driven solution, and procured chain-drive parts and tyres across Gandhinagar/Ahmedabad.</li>
-            <li>Evaluated multiple steering and braking setups, selected the most feasible configuration, and integrated it into a working vehicle delivered with a live drive demonstration; debugged system failures iteratively by diagnosing each specific failure point, applying a targeted fix, and re-testing rather than redesigning from scratch.</li>
-          </ul>
-
-          <div class="visual-rail">
-            <div class="slot" style="aspect-ratio: 4/3; min-height: 360px;">
-              <div class="slot-body">
-                <span class="slot-kind" data-kind="3D">3D · Featured</span>
-                <span class="slot-name">Go-Kart — full chassis / drivable rig</span>
-                <span class="slot-aspect">4 : 3 · orbit + explode</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </article>
-
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Energy Efficient Control of Inverted Pendulum</p>
-          <span class="entry-when">April, 2022</span>
-        </div>
-        <p class="entry-sub">
-          <a href="https://drive.google.com/file/d/1JoBnupwAd_gvdzfio9srCIoMLRYLAzc1/view" target="_blank" rel="noopener" style="text-decoration:underline;">Project Video</a>
-          <span class="pipe">|</span>
-          <a href="https://drive.google.com/file/d/1fkPUp6bHTxHULA7tGd3fxiNw31WdLXKy/view" target="_blank" rel="noopener" style="text-decoration:underline;">Report</a>
-          <span class="pipe">|</span>
-          <a href="https://drive.google.com/file/d/16yHCzBDirX8PIeAXZRM4cfcvIgk45CAs/view" target="_blank" rel="noopener" style="text-decoration:underline;">Testing Rig</a>
-          <span class="pipe">|</span>
-          <span>Advisor: Prof. Madhu Vadali</span>
-        </p>
-
-        <div class="split flip" style="margin-top: 1rem;">
-          <div class="visual-rail">
-            <div class="slot" style="aspect-ratio: 1/1;">
-              <div class="slot-body">
-                <span class="slot-kind" data-kind="3D">3D</span>
-                <span class="slot-name">Motor-actuated inverted pendulum rig</span>
-                <span class="slot-aspect">1 : 1 · swing-up motion</span>
-              </div>
-            </div>
-          </div>
-          <ul class="bullets">
-            <li>Designed and fabricated the motor-actuated inverted pendulum test rig from scratch using CAD and laser cutting — prioritised structural robustness so the setup could sustain repeated hard testing across destabilising and stabilising control experiments without mechanical failure at full motor RPM; rig held through complete experimental validation.</li>
-            <li>Led motor parameter identification using MATLAB System Identification Toolbox — designed two constrained experiments to isolate electrical (inductance, resistance) and mechanical (inertia, damping) parameters; used identified values to build a cascaded controller (energy-based swing-up sequence + PD position controller with current feedforward) and validated the energy-efficient strategy on the physical rig.</li>
-          </ul>
-        </div>
-      </article>
-
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Ball on Beam — Mechanism Design, Hardware Integration &amp; Closed-Loop Control Setup</p>
-          <span class="entry-when">January 2022</span>
-        </div>
-        <p class="entry-sub">
-          <a href="https://drive.google.com/file/d/1FT_Wzwe9H6jTgkuAspJ2YjaYZ-4z4QHe/view" target="_blank" rel="noopener" style="text-decoration:underline;">Project Video</a>
-          <span class="pipe">|</span>
-          <span>Advisor: Prof. Harish PM</span>
-        </p>
-
-        <div class="split" style="margin-top: 1rem;">
-          <ul class="bullets">
-            <li>Designed the beam-tilting mechanism from first principles through iteration — evaluated linkage, direct-drive, and gear-sector actuation concepts against torque, speed, and fabrication constraints before committing to a gear-sector drive; fabricated the full load-bearing structure from laser-cut MDF with dimensional tolerances selected to match the closed-loop control requirements.</li>
-            <li>Integrated a complete multi-subsystem hardware stack from scratch with no reference design — DC motor, motor driver, position sensor, and Arduino controller — into a working closed-loop physical system; handled component selection, inter-subsystem interfacing, wiring, and embedded firmware, taking the build from disparate parts to active closed-loop sensor feedback.</li>
-            <li>Diagnosed and characterised a fundamental actuator-speed mismatch that threatened system viability — the supplied motor's 1000 RPM output was far beyond the controllable range required for stable beam actuation; applied gear reduction and iterative calibration to bring the system into an operable range, then documented the residual performance gap as a quantified hardware constraint rather than an unknown.</li>
-            <li>Delivered a working closed-loop system with full beam actuation, sensor feedback integration, and controller implementation; systematically characterised closed-loop performance across P and PD controller configurations and a sweep of gain values, generating a documented performance envelope — root cause analysis confirmed the binding constraint was the actuator-speed ceiling, not the control architecture, validating the controller design and isolating the failure to the physical subsystem.</li>
-          </ul>
-
-          <div class="visual-rail">
-            <div class="slot" style="aspect-ratio: 4/3;">
-              <div class="slot-body">
-                <span class="slot-kind" data-kind="3D">3D</span>
-                <span class="slot-name">Ball-on-Beam — gear-sector drive + sensor feedback</span>
-                <span class="slot-aspect">4 : 3 · live ball tracking</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </article>
-
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Oldham Coupling — CNC Machining, Mechanism Design &amp; Variable Offset System</p>
-          <span class="entry-when">February, 2022</span>
-        </div>
-        <p class="entry-sub">
-          <a href="https://drive.google.com/file/d/1I84sv3gypHiSbgT0E_j8CXTokQ4rwIKe/view" target="_blank" rel="noopener" style="text-decoration:underline;">Project Image-1</a>
-          <span class="pipe">|</span>
-          <a href="https://drive.google.com/file/d/1HIvkyE4g3bxuhzvuUYffncRWfb9ItdH4/view" target="_blank" rel="noopener" style="text-decoration:underline;">Project Image-2</a>
-          <span class="pipe">|</span>
-          <span>Advisor: Prof. Harish PM</span>
-        </p>
-
-        <div class="split flip" style="margin-top: 1rem;">
-          <div class="visual-rail">
-            <div class="slot" style="aspect-ratio: 1/1;">
-              <div class="slot-body">
-                <span class="slot-kind" data-kind="3D">3D</span>
-                <span class="slot-name">Oldham coupling — variable offset rig</span>
-                <span class="slot-aspect">1 : 1 · variable offset</span>
-              </div>
-            </div>
-          </div>
-          <ul class="bullets">
-            <li>Owned end-to-end system design of a functional Oldham coupling prototype — translated the three-disc mechanism concept into a fully integrated assembly, determining how each component (left disc, centre disc, right disc, shafts, bearings, and structural frame) would physically fit together and interface under rotation.</li>
-            <li>Designed the variable offset feature from first principles: introduced slotted vertical acrylic panels allowing the shaft mounting position to be adjusted continuously, enabling live demonstration of torque transmission across varying misalignment conditions beyond the minimum 15 mm specified.</li>
-            <li>Specified and integrated bearings at the shaft–panel interface to decouple rotational motion from the fixed acrylic frame — the key design decision that eliminated binding and allowed smooth shaft rotation independent of structural loads.</li>
-            <li>Iterated on coupling disc geometry and sliding clearances across multiple versions to resolve fit issues arising from tolerance mismatches between CNC-machined metal components and laser-cut acrylic panels.</li>
-          </ul>
-        </div>
-      </article>
-
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Shoulder Joint and Harmony Exoskeleton — Mechanism Design &amp; Working Prototype</p>
-          <span class="entry-when">February, 2021</span>
-        </div>
-        <p class="entry-sub">
-          <a href="https://drive.google.com/file/d/1brWBERTa9KXhCcc-i8ntMxDyh_Oxmw5-/view" target="_blank" rel="noopener" style="text-decoration:underline;">CAD Model Demo</a>
-          <span class="pipe">|</span>
-          <a href="https://drive.google.com/file/d/1G-dXtOLStOF7FJCXPODBiBZG-QkIXGLP/view" target="_blank" rel="noopener" style="text-decoration:underline;">Prototype</a>
-          <span class="pipe">|</span>
-          <span>Advisor: Prof. Harish PM</span>
-        </p>
-
-        <div class="split" style="margin-top: 1rem;">
-          <ul class="bullets">
-            <li>Designed a 5-DOF shoulder exoskeleton mechanism that captured scapular rhythm — iterated joint geometry, linkage kinematics, and range-of-motion constraints through CAD across multiple configurations to balance mechanical complexity against anatomical fidelity; produced a working 3D-printed prototype validated through physical range-of-motion testing, with each design decision documented against the alternatives considered.</li>
-          </ul>
-
-          <div class="visual-rail">
-            <div class="slot" style="aspect-ratio: 4/3;">
-              <div class="slot-body">
-                <span class="slot-kind" data-kind="3D">3D · Featured</span>
-                <span class="slot-name">5-DOF shoulder exoskeleton — scapular rhythm</span>
-                <span class="slot-aspect">4 : 3 · animated ROM</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </article>
-
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Umbrella Holder for Specially-abled Individuals</p>
-          <span class="entry-when">April, 2022</span>
-        </div>
-        <p class="entry-sub">
-          <a href="https://drive.google.com/file/d/1PMKWuZQ9cRLqbe_ZWzoutWbLmvWdJXxK/view" target="_blank" rel="noopener" style="text-decoration:underline;">Project Video</a>
-          <span class="pipe">|</span>
-          <span>Advisor: Prof. Harish PM</span>
-        </p>
-
-        <div class="split flip" style="margin-top: 1rem;">
-          <div class="visual-rail">
-            <div class="slot" style="aspect-ratio: 1/1;">
-              <div class="slot-body">
-                <span class="slot-kind" data-kind="3D">3D</span>
-                <span class="slot-name">Wearable umbrella holder — anthropometric fit</span>
-                <span class="slot-aspect">1 : 1 · linear actuation</span>
-              </div>
-            </div>
-          </div>
-          <ul class="bullets">
-            <li>Designed and fabricated a wearable, hands-free umbrella holder for individuals with limited arm mobility — applied anthropometric measurements to determine fit parameters across the target user population, created CAD, and fabricated a lightweight mechanism with guided linear actuation; iterated on stability and load distribution within strict weight and wearability constraints imposed by the intended use case.</li>
-          </ul>
-        </div>
-      </article>
+      <TimedCards />
     </section>
 
     <!-- Positions of Responsibility -->
@@ -1281,10 +1375,10 @@ onBeforeUnmount(() => {
 
         <div class="split" style="margin-top: 1rem;">
           <ul class="bullets">
-            <li>Held Welfare Secretary, Interim General Secretary, and Interim Cultural Secretary concurrently — the only council member to carry all three; ran day-to-day operations for 2,000+ UG/PG students across hostels, mess, laundry, health services, and commercial outlets; coordinated a 25-member council as sole bridge between students and institute administration.</li>
-            <li><em>Designed a trial-based vendor selection system</em> for commercial outlets from scratch — ran 20+ vendor trials and onboarded 6 new outlets based on demonstrated performance and student feedback, not lowest bid; replaced a process that previously had no structured evaluation.</li>
-            <li>As Interim General Secretary: owned Convocation operations end-to-end for the Class of 2022 with a 68-member execution team; responsible for full live-day coordination and real-time issue resolution across all workstreams.</li>
-            <li>As Interim Cultural Secretary: led a 104-student contingent for the Inter-IIT Cultural Meet; managed logistics, team coordination, participation scheduling, and on-ground safety across the full event.</li>
+            <li>Represented a <strong>3,600+ student community</strong> on institute decisions spanning food services, laundry, healthcare, commercial establishments, hostels and student affairs — coordinating with administration, external vendors, and a 25-member council as the sole bridge between students and the institute.</li>
+            <li>Student representative in <strong>procurement and tender evaluations</strong> for campus mess and laundry contracts — conducted operational due diligence across vendor facilities in Gujarat, Rajasthan and Delhi before contributing to institute-wide provider selection.</li>
+            <li><em>Designed a trial-based vendor selection system</em> via the Commercial Establishment &amp; Management Committee — engaged 20+ national chains and regional players, ran live campus trials, and onboarded outlets on demonstrated performance rather than lowest-cost bids.</li>
+            <li>Owned planning and governance of student initiatives with cumulative budgets exceeding <strong>₹80+ lakh</strong> as a student signing authority; led Convocation 2022 through a 68-member team and IITGN's 104-member Inter-IIT Cultural Meet contingent end-to-end.</li>
           </ul>
 
           <div class="visual-rail">
@@ -1307,10 +1401,11 @@ onBeforeUnmount(() => {
         <p class="entry-sub"><span>Welfare Council, IIT Gandhinagar</span></p>
 
         <ul class="bullets">
-          <li>Built a vendor candidate pipeline of 20+ operators across food and service categories — conducted independent on-ground outreach and capability assessments across national chains and regional operators before any formal trial.</li>
-          <li>Designed a competitive trial-and-selection system from scratch: ran simultaneous 1–2 day live campus trials for vendors in the same category, collected structured community feedback, and made selection decisions based on demonstrated performance — replacing a process with no prior evaluation standard.</li>
-          <li>Onboarded 6 new permanent and recurring outlets serving a 2,000+ student community — managed end-to-end vendor coordination, scheduling, and logistics across each launch from trial approval to operational go-live.</li>
-          <li>Organised multiple blood donation drive end-to-end — coordinated with GCRI and Ahmedabad Civil Hospital, managed 400+ registrations with slot-based crowd control, and collected blood units, the institute's highest post-pandemic yield.</li>
+          <li>Identified and assessed <strong>20+ vendor operators</strong> across food and service categories through independent on-ground outreach and capability assessments spanning national chains and regional operators.</li>
+          <li>Designed and implemented a <em>data-driven vendor evaluation framework</em> — ran multiple 1–2 day campus trials and collected structured community feedback to replace ad-hoc vendor selection with an evidence-based process.</li>
+          <li>Onboarded and launched <strong>6 food and service outlets</strong> serving a 3,600+ student community — managing end-to-end negotiations, approvals, scheduling, and operational go-live.</li>
+          <li>Hosted an institute-wide ice cream social for <strong>4,500+ students, faculty, staff and service personnel</strong> — from vendor selection and procurement to on-ground execution.</li>
+          <li>Led multiple blood donation drives with GCRI and Ahmedabad Civil Hospital — coordinated 400+ registrations via slot-based crowd management, the institute's highest post-pandemic collection.</li>
         </ul>
       </article>
 
@@ -1390,23 +1485,16 @@ onBeforeUnmount(() => {
       <h2 class="section-title">Skill<br /><span class="accent-line">Summary</span></h2>
 
       <div class="skill-group">
-        <span class="h">Operations &amp; Program Management</span>
+        <span class="h">Hardware &amp; Product Development</span>
         <div class="tags">
-          <span class="skill-tag">Cross-functional Program Management</span>
-          <span class="skill-tag">Strategic Planning</span>
-          <span class="skill-tag">Vendor Management</span>
-          <span class="skill-tag">Process Design &amp; SOPs</span>
-          <span class="skill-tag">Change Management</span>
-          <span class="skill-tag">Executive Stakeholder Reporting</span>
-          <span class="skill-tag">Root Cause Analysis</span>
-        </div>
-      </div>
-
-      <div class="skill-group">
-        <span class="h">Engineering &amp; Hardware</span>
-        <div class="tags">
+          <span class="skill-tag">Design for Manufacturing (DFM)</span>
           <span class="skill-tag">Autodesk Fusion 360</span>
-          <span class="skill-tag">Autodesk Inventor Professional</span>
+          <span class="skill-tag">Fabrication &amp; Machining</span>
+          <span class="skill-tag">AutoCAD</span>
+          <span class="skill-tag">Hardware Systems Integration</span>
+          <span class="skill-tag">Control-System Design</span>
+          <span class="skill-tag">Reverse Engineering &amp; BOM Analysis</span>
+          <span class="skill-tag">Hardware Sourcing &amp; Pre-Production</span>
           <span class="skill-tag">MATLAB</span>
           <span class="skill-tag">Arduino</span>
           <span class="skill-tag">LT-Spice</span>
@@ -1414,8 +1502,16 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="skill-group">
-        <span class="h">Delivery &amp; DevOps</span>
+        <span class="h">Data, Modelling &amp; Automation</span>
         <div class="tags">
+          <span class="skill-tag">Model Architecture &amp; Framework Design</span>
+          <span class="skill-tag">Process Automation</span>
+          <span class="skill-tag">Unit Economics Modelling</span>
+          <span class="skill-tag">Account-level P&amp;L</span>
+          <span class="skill-tag">Data Reconciliation &amp; Quality</span>
+          <span class="skill-tag">SQL</span>
+          <span class="skill-tag">PySpark (SparkSQL)</span>
+          <span class="skill-tag">Python</span>
           <span class="skill-tag">Jenkins CI/CD</span>
           <span class="skill-tag">BitBucket</span>
           <span class="skill-tag">Jira (Agile)</span>
@@ -1424,12 +1520,28 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="skill-group">
-        <span class="h">Data &amp; Languages</span>
+        <span class="h">Operations &amp; Program Leadership</span>
         <div class="tags">
-          <span class="skill-tag">Generative AI Tools</span>
-          <span class="skill-tag">SQL</span>
-          <span class="skill-tag">PySpark (SparkSQL)</span>
-          <span class="skill-tag">Python (data processing &amp; scripting)</span>
+          <span class="skill-tag">Cross-functional Program Management</span>
+          <span class="skill-tag">Operational Ownership</span>
+          <span class="skill-tag">Vendor &amp; Partner Management</span>
+          <span class="skill-tag">Executive Stakeholder Reporting</span>
+          <span class="skill-tag">Process Design &amp; SOPs</span>
+          <span class="skill-tag">Procurement &amp; Tender Evaluation</span>
+          <span class="skill-tag">Budget &amp; Event Governance</span>
+          <span class="skill-tag">Operating Cadence</span>
+          <span class="skill-tag">Root Cause Analysis</span>
+        </div>
+      </div>
+
+      <div class="skill-group">
+        <span class="h">AI-Assisted Workflows</span>
+        <div class="tags">
+          <span class="skill-tag">Prompt Engineering</span>
+          <span class="skill-tag">Claude</span>
+          <span class="skill-tag">ChatGPT</span>
+          <span class="skill-tag">GitHub Copilot</span>
+          <span class="skill-tag">Cursor</span>
         </div>
       </div>
     </section>
@@ -1439,9 +1551,9 @@ onBeforeUnmount(() => {
     <div class="footer-grid">
       <h2>Open to <em>product &amp; program operations</em> at hardware-first companies.</h2>
       <div class="links">
-        <a href="mailto:adarsh.g@iitgn.ac.in">
+        <a href="mailto:golaitadarsh@gmail.com">
           <span class="k">Email</span>
-          <span class="v">adarsh.g@iitgn.ac.in</span>
+          <span class="v">golaitadarsh@gmail.com</span>
         </a>
         <a href="tel:+918602772536">
           <span class="k">Phone</span>
@@ -2039,6 +2151,76 @@ main > section.section {
   color: rgba(242,243,236,0.55);
   text-align: right;
 }
+.hs-sticky .cr-meta-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.65rem;
+}
+/* cursor-follow hint — the reason the dwell exists. Accent-coloured and
+   gently pulsing so a passing eye catches it before scrolling on. */
+.hs-sticky .cr-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  font: 600 0.68rem/1.5 var(--f-mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+  animation: cr-hint-pulse 2.4s ease-in-out infinite;
+}
+.hs-sticky .cr-hint-dot {
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 var(--accent);
+  animation: cr-hint-dot 2.4s ease-in-out infinite;
+}
+@keyframes cr-hint-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+@keyframes cr-hint-dot {
+  0%, 100% { transform: scale(0.8); }
+  50% { transform: scale(1.15); }
+}
+/* Breakout CTA — the invitation to send the character down to the summary.
+   .cr-overlay is pointer-events:none, so the button re-enables itself. */
+.hs-sticky .cr-cta {
+  pointer-events: auto;
+  appearance: none;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6em;
+  background: var(--accent);
+  color: var(--accent-ink, #10130A);
+  font: 700 0.68rem/1 var(--f-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 0.85em 1.35em;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 0 0 0 rgba(219, 254, 82, 0);
+}
+.hs-sticky .cr-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(219, 254, 82, 0.35);
+}
+.hs-sticky .cr-cta:active { transform: translateY(0); }
+.hs-sticky .cr-cta-arrow {
+  display: inline-block;
+  animation: cr-cta-arrow 1.5s ease-in-out infinite;
+}
+@keyframes cr-cta-arrow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hs-sticky .cr-hint, .hs-sticky .cr-hint-dot, .hs-sticky .cr-cta-arrow { animation: none; }
+}
 
 /* ────────────────────────────────────────────────────────────
    Page-2 front-stack wrapper — wraps the real intro-message +
@@ -2252,34 +2434,153 @@ main > section.section {
   }
 }
 
-/* ─── summary ─── */
-#summary {
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
-  gap: clamp(2rem, 5vw, 5rem);
-  align-items: start;
+/* ─── summary — pinned character stage ───
+   Staged (desktop, motion OK): section grows to 240vh, inner pin holds one
+   viewport. --push (0..1, scroll-scrubbed) drives the push-out: the body
+   text slides off the left edge while the character follows it, playing
+   the pushing clip. Non-staged: plain stacked flow, character below text. */
+#summary { --sum-appr: 0; --sum-exit: 0; }
+#summary.sum-staged { height: 240vh; padding: 0; }
+#summary .summary-pin { min-height: 0; }
+#summary.sum-staged .summary-pin {
+  position: sticky;
+  top: var(--topbar-h, 56px);
+  height: calc(100vh - var(--topbar-h, 56px));
+  padding: clamp(1.5rem, 4vh, 2.75rem) var(--gutter-x) clamp(1rem, 3vh, 2rem);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
 }
-/* minmax(0,1fr), not bare 1fr: a 1fr track's min is auto, so slot children
-   (aspect-ratio × min-height ⇒ wide min-content) blow the track past the
-   viewport on phones. minmax(0,1fr) lets the track compress. */
-@media (max-width: 980px) { #summary { grid-template-columns: minmax(0, 1fr); } }
+#summary .summary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: clamp(2rem, 4vw, 4.5rem);
+  align-items: center;
+  width: 100%;
+}
+/* minmax(0,1fr), not bare 1fr: a 1fr track's min is auto, so wide children
+   blow the track past the viewport on phones. minmax(0,1fr) compresses. */
+@media (max-width: 980px) { #summary .summary-grid { grid-template-columns: minmax(0, 1fr); } }
 #summary .body p {
-  font: 400 clamp(1.05rem, 1.3vw, 1.18rem)/1.65 var(--f-sans);
+  font: 400 clamp(1rem, 1.25vw, 1.14rem)/1.62 var(--f-sans);
   color: var(--ink);
   max-width: 60ch;
   text-wrap: pretty;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.15rem;
 }
 #summary .body p strong { color: var(--ink); font-weight: 600; }
 #summary .body p em { font-style: normal; background: var(--accent); color: var(--accent-ink); padding: 0 0.16em; }
-#summary .stack-right {
+#summary .summary-char {
+  height: min(72vh, 640px);
+  min-height: 360px;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  position: sticky;
-  top: 6rem;
 }
-#summary .slot-portrait { aspect-ratio: 4/5; min-height: 380px; }
+#summary .char-slot {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+#summary.sum-staged .summary-char {
+  height: calc(100vh - var(--topbar-h, 56px) - clamp(3rem, 8vh, 5.5rem));
+  min-height: 0;
+}
+/* Grounding shadow under the landed character. --char-lift (0 grounded →
+   1 airborne) is written by JourneyCharacter every frame: it thins and
+   fades while he's in the air (flight arc, jump clips) and blooms on
+   landing. Default 1 = hidden until he has actually arrived. */
+#summary .char-shadow {
+  position: absolute;
+  left: 50%;
+  bottom: 3.5%;
+  width: 46%;
+  height: clamp(10px, 2.6vh, 20px);
+  transform: translateX(-50%) scaleX(calc(1 - var(--char-lift, 1) * 0.45));
+  background: radial-gradient(ellipse at center, rgba(10, 12, 6, 0.3) 0%, rgba(10, 12, 6, 0) 68%);
+  /* Fades with the push-out too, so no shadow smear lingers on the empty
+     pin after he has shoved everything off the left edge. */
+  opacity: calc((1 - var(--char-lift, 1)) * 0.9 * (1 - var(--sum-exit, 0)));
+  pointer-events: none;
+}
+/* Push-out — contact-locked, scrubbed, no transitions.
+   Phase 1 (--sum-appr 0→1): he walks from his slot to the text block.
+   Phase 2 (--sum-exit 0→1): character and text travel off the left edge
+   TOGETHER at the same speed — a shove, not two things sliding apart.
+   The text leans back a touch as it goes, like it took the hit. */
+#summary.sum-staged .body {
+  transform:
+    translate3d(calc(var(--sum-exit, 0) * -68vw), 0, 0)
+    rotate(calc(var(--sum-exit, 0) * -1.5deg));
+  transform-origin: 100% 65%;
+  will-change: transform;
+}
+/* -68vw clears the text's right edge (~55vw) and the character's own body
+   exactly at exit=1 — he stays on screen pushing until the very end
+   instead of vanishing halfway through the scrub. */
+#summary.sum-staged .summary-char {
+  transform: translate3d(calc(var(--sum-appr, 0) * -11vw + var(--sum-exit, 0) * -68vw), 0, 0);
+  will-change: transform;
+}
+/* Action buttons — icon circles with tiny mono labels. Rise in once the
+   character has landed; fade as the push-out begins. */
+#summary .summary-actions {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  gap: clamp(1rem, 1.8vw, 1.7rem);
+  padding-top: clamp(0.7rem, 1.6vh, 1.2rem);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.45s ease, transform 0.45s ease;
+  pointer-events: none;
+}
+#summary .summary-actions.is-live {
+  opacity: calc(1 - var(--sum-appr, 0));
+  transform: none;
+  pointer-events: auto;
+}
+.sum-act {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  color: var(--ink);
+}
+.sum-act-btn {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid var(--rule);
+  display: grid;
+  place-items: center;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease,
+    transform 0.2s ease;
+}
+.sum-act-btn svg {
+  width: 19px;
+  height: 19px;
+}
+.sum-act-label {
+  font: 600 0.58rem/1 var(--f-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  transition: color 0.2s ease;
+}
+.sum-act:hover:not(:disabled) .sum-act-btn {
+  background: var(--ink);
+  color: var(--accent);
+  border-color: var(--ink);
+  transform: translateY(-3px);
+}
+.sum-act:hover:not(:disabled) .sum-act-label { color: var(--ink); }
+.sum-act:active:not(:disabled) .sum-act-btn { transform: translateY(-1px) scale(0.96); }
+.sum-act:disabled { cursor: default; opacity: 0.35; }
 
 /* ─── two-column layouts ─── */
 .split {
@@ -2426,5 +2727,595 @@ main > section.section {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: rgba(255,255,255,0.45);
+}
+
+/* ─── audit fix (from design review) ───
+   section-num was sticky — floated over body text mid-scroll; now static */
+.section-num { position: static; }
+
+/* ─── company highlight mark (employer names) ─── */
+.co-mark {
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 0.04em 0.22em 0.08em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* ════════════════════════════════════════════════════════════
+   EDUCATION — pinned staged reveal
+   Section pins for ~1.4 viewports of scroll. Scrubbing back reverses.
+   Stage 0 · only the "Education" heading
+   Stage 1 · institute name slides in from the left, display-sized
+   Stage 2 · degree, records strip, visuals rise in below
+   ════════════════════════════════════════════════════════════ */
+#education.edu-staged { height: 240vh; padding: 0; min-height: 0; }
+#education .edu-pin { display: flex; flex-direction: column; min-height: 0; }
+#education.edu-staged .edu-pin {
+  position: sticky;
+  /* pin BELOW the sticky topbar (not behind it) so the heading keeps
+     a comfortable gap from the bar while pinned */
+  top: var(--topbar-h, 56px);
+  height: calc(100vh - var(--topbar-h, 56px));
+  padding: clamp(1.5rem, 4vh, 2.75rem) var(--gutter-x) clamp(1rem, 3.5vh, 2.5rem);
+  overflow: hidden;
+}
+
+/* the name — display type on accent blocks, the section's centrepiece.
+   Sized against BOTH axes so the pinned stack always fits the viewport. */
+#education .edu-name { margin: 0 0 clamp(1rem, 3.5vh, 2.5rem); }
+#education .edu-name-line {
+  font: 900 clamp(1.3rem, min(3.9vw, 5.4vh), 3.8rem)/1.12 var(--f-sans);
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+  width: max-content;
+  max-width: 100%;
+}
+#education .edu-name-line + .edu-name-line { margin-top: 0.14em; }
+#education .edu-name-line .iit-mark {
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 0.05em 0.2em 0.09em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+#education .edu-name-meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: clamp(0.6rem, 2vh, 1.1rem);
+  font: 500 0.72rem/1 var(--f-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+#education .edu-abbr {
+  background: var(--ink);
+  color: var(--accent);
+  font: 700 0.72rem/1 var(--f-mono);
+  letter-spacing: 0.24em;
+  padding: 0.55em 0.5em 0.55em 0.8em;
+}
+#education .edu-degree {
+  font: 700 28px/32.45px var(--f-sans);
+  letter-spacing: 0;
+  color: #09090B;
+  margin-top: clamp(0.9rem, 2.5vh, 1.5rem);
+}
+#education .edu-gold {
+  color: var(--ink);
+  font-size: 20px;
+}
+#education .edu-gold strong { font-weight: 700; font-size: 20px; }
+
+#education .edu-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: clamp(2rem, 5vw, 5rem);
+  align-items: end;
+}
+#education .edu-visuals {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 0.75rem;
+  align-items: end;
+}
+#education .edu-visuals .slot { max-height: 26vh; min-height: 0; }
+@media (max-width: 980px) {
+  #education .edu-details { grid-template-columns: minmax(0, 1fr); }
+  #education .edu-visuals { align-items: start; }
+}
+/* short or cramped viewports: drop the visual slots while pinned so
+   every stage fits inside the 100vh pin without clipping */
+@media (max-height: 660px), (max-width: 700px) {
+  #education.edu-staged .edu-visuals { display: none; }
+  #education.edu-staged .edu-details { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* stage motion — JS adds .edu-staged only when pinning is active */
+@media (prefers-reduced-motion: no-preference) {
+  #education.edu-staged .edu-name-line,
+  #education.edu-staged .edu-name-meta {
+    opacity: 0;
+    transform: translateX(-72px);
+    transition: opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform, opacity;
+  }
+  #education.edu-staged .edu-name-line:nth-child(2) { transition-delay: 0.08s; }
+  #education.edu-staged .edu-name-meta { transition-delay: 0.16s; }
+  #education.edu-staged.stage-name .edu-name-line,
+  #education.edu-staged.stage-name .edu-name-meta {
+    opacity: 1;
+    transform: none;
+  }
+  #education.edu-staged .edu-detail {
+    opacity: 0;
+    transform: translateY(26px);
+    transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1) calc(var(--d, 0) * 0.1s),
+                transform 0.6s cubic-bezier(0.22, 1, 0.36, 1) calc(var(--d, 0) * 0.1s);
+  }
+  #education.edu-staged.stage-details .edu-detail {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════
+   WORK EXPERIENCE — pinned company spotlight
+   Section pins for ~2.2 viewports. Scroll scrubs through the three
+   employers — the active company's name fills with the accent mark
+   while its role panel rises in on the right. Reverses on scroll-back.
+   Fallback (small screens / reduced motion): stacked entries with
+   every company name highlighted.
+   ════════════════════════════════════════════════════════════ */
+#experience.xp-staged { height: 320vh; padding: 0; min-height: 0; }
+#experience .xp-pin {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: clamp(1.25rem, 3vh, 2rem);
+}
+#experience.xp-staged .xp-pin {
+  position: sticky;
+  top: var(--topbar-h, 56px);
+  height: calc(100vh - var(--topbar-h, 56px));
+  padding: clamp(1.5rem, 4vh, 2.75rem) var(--gutter-x) clamp(1rem, 3.5vh, 2.5rem);
+  overflow: hidden;
+}
+
+/* header row — title left, scrub progress right */
+#experience .xp-head-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+}
+#experience .xp-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.7rem;
+  padding-bottom: 0.5rem;
+}
+#experience:not(.xp-staged) .xp-progress { display: none; }
+#experience .xp-prog-meta {
+  font: 500 0.62rem/1 var(--f-mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+#experience .xp-prog-track { display: flex; gap: 6px; }
+#experience .xp-tick {
+  width: clamp(30px, 3.4vw, 54px);
+  height: 4px;
+  background: var(--ink-trace);
+  transition: background 0.4s ease;
+}
+#experience[data-xp-active="0"] .xp-tick:nth-child(1) { background: var(--ink); }
+#experience[data-xp-active="1"] .xp-tick:nth-child(1) { background: var(--ink-faint); }
+#experience[data-xp-active="1"] .xp-tick:nth-child(2) { background: var(--ink); }
+#experience[data-xp-active="2"] .xp-tick:nth-child(1),
+#experience[data-xp-active="2"] .xp-tick:nth-child(2) { background: var(--ink-faint); }
+#experience[data-xp-active="2"] .xp-tick:nth-child(3) { background: var(--ink); }
+
+#experience .xp-stage {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: clamp(2rem, 5vw, 5rem);
+  align-items: stretch;
+}
+
+/* company roster (left) — timeline rail with node markers */
+#experience .xp-companies {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(1rem, 3.2vh, 2rem);
+  margin: 0;
+  padding: 0;
+}
+#experience.xp-staged .xp-companies {
+  --xp-railpad: clamp(1.7rem, 2.6vw, 2.6rem);
+  position: relative;
+  padding-left: var(--xp-railpad);
+  align-self: center;
+  width: 100%;
+}
+#experience.xp-staged .xp-companies::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 0.4rem;
+  bottom: 0.4rem;
+  width: 1px;
+  background: var(--rule);
+}
+#experience.xp-staged .xp-co { position: relative; }
+#experience.xp-staged .xp-co::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--xp-railpad));
+  top: 0;
+  width: 11px;
+  height: 11px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  transition: background 0.45s ease, border-color 0.45s ease;
+}
+#experience.xp-staged .xp-co.is-active::before {
+  background: var(--accent);
+  border-color: var(--ink);
+}
+#experience .xp-co-num {
+  display: block;
+  font: 500 0.62rem/1 var(--f-mono);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 0.45rem;
+  transition: color 0.45s ease;
+}
+#experience .xp-co.is-active .xp-co-num { color: var(--ink); }
+#experience .xp-co-name {
+  font: 900 clamp(1.8rem, min(4.4vw, 6.8vh), 4.6rem)/1.05 var(--f-sans);
+  letter-spacing: -0.045em;
+  text-transform: uppercase;
+  width: max-content;
+  max-width: 100%;
+}
+/* inactive names sit faint; the active employer fills with the mark */
+#experience.xp-staged .xp-co .co-mark {
+  background: transparent;
+  color: var(--ink-faint);
+  transition: background 0.5s ease, color 0.5s ease;
+}
+#experience.xp-staged .xp-co.is-active .co-mark {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* role panels (right) — framed spotlight card */
+#experience .xp-panels { min-width: 0; }
+#experience.xp-staged .xp-panels {
+  display: grid;
+  align-self: stretch;
+  align-items: stretch;
+  min-height: 0;
+}
+#experience .xp-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.85rem, 2vh, 1.2rem);
+  min-width: 0;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  padding: clamp(1.3rem, 2.4vh, 1.9rem) clamp(1.3rem, 1.8vw, 1.9rem);
+}
+#experience.xp-staged .xp-panel {
+  grid-area: 1 / 1;
+  height: 100%;
+  min-height: 0;
+  opacity: 0;
+  transition: opacity 0.45s ease;
+  pointer-events: none;
+}
+#experience.xp-staged .xp-panel.is-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* content rises in a soft stagger as the panel takes the spotlight */
+#experience.xp-staged .xp-panel > * {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+              transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+#experience.xp-staged .xp-panel.is-active > * {
+  opacity: 1;
+  transform: none;
+}
+#experience.xp-staged .xp-panel.is-active > *:nth-child(3) { transition-delay: 0.05s; }
+#experience.xp-staged .xp-panel.is-active > *:nth-child(4) { transition-delay: 0.1s; }
+#experience.xp-staged .xp-panel.is-active > *:nth-child(5) { transition-delay: 0.14s; }
+#experience.xp-staged .xp-panel.is-active > *:nth-child(6) { transition-delay: 0.18s; }
+#experience.xp-staged .xp-panel.is-active > *:nth-child(7) { transition-delay: 0.22s; }
+/* oversized outline index anchoring the card's top-right corner */
+#experience .xp-index {
+  position: absolute;
+  top: clamp(0.9rem, 1.8vh, 1.3rem);
+  right: clamp(1.1rem, 1.6vw, 1.6rem);
+  font: 900 clamp(2.4rem, 4.6vh, 3.4rem)/1 var(--f-sans);
+  letter-spacing: -0.03em;
+  color: transparent;
+  -webkit-text-stroke: 1.5px var(--ink-trace);
+  pointer-events: none;
+  user-select: none;
+}
+/* company name inside the panel — visually replaced by the roster while
+   pinned (kept for screen readers); shown as the entry title in fallback */
+#experience.xp-staged .xp-panel-co {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+/* panel head — badge + role, one tight cluster */
+#experience .xp-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding-right: clamp(3rem, 5vw, 4.5rem);
+}
+#experience .xp-badge {
+  font: 500 0.64rem/1 var(--f-mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+#experience .xp-badge.live { color: var(--ink); }
+#experience .xp-badge.live::before {
+  content: '';
+  display: inline-block;
+  width: 7px; height: 7px;
+  background: var(--accent);
+  margin-right: 0.5rem;
+  vertical-align: middle;
+}
+#experience .xp-role {
+  font: 800 clamp(1.2rem, min(1.9vw, 2.8vh), 1.55rem)/1.2 var(--f-sans);
+  letter-spacing: -0.02em;
+}
+/* dateline ledger — role rows with right-aligned dates, ruled top & bottom */
+#experience .xp-datelines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: clamp(0.6rem, 1.6vh, 0.85rem) 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+#experience .xp-datelines .row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.35rem 1.25rem;
+}
+#experience .xp-datelines .who {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  font: 600 0.85rem/1.35 var(--f-sans);
+  letter-spacing: -0.005em;
+  color: var(--ink);
+}
+#experience .xp-datelines .when {
+  font: 500 0.72rem/1.35 var(--f-mono);
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+#experience .xp-datelines .promo {
+  font: 500 0.56rem/1 var(--f-mono);
+  font-style: normal;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 0.22rem 0.4rem;
+}
+#experience .xp-summary {
+  font: 400 clamp(0.92rem, 1.05vw, 1rem)/1.55 var(--f-sans);
+  color: var(--ink-soft);
+  max-width: 52ch;
+  text-wrap: pretty;
+}
+#experience .xp-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+}
+#experience .xp-stats .cell {
+  background: var(--paper);
+  padding: clamp(0.75rem, 1.8vh, 1.05rem) 1.1rem;
+  display: flex; flex-direction: column; gap: 0.45rem;
+}
+#experience .xp-stats .k {
+  font: 500 0.6rem/1.3 var(--f-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+#experience .xp-stats .v {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font: 800 clamp(1rem, min(1.4vw, 2.4vh), 1.15rem)/1.15 var(--f-sans);
+  letter-spacing: -0.015em;
+}
+#experience .xp-stats .v::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  background: var(--accent);
+  outline: 1px solid var(--ink-trace);
+}
+#experience .xp-slot {
+  flex: 1 1 auto;
+  min-height: clamp(96px, 14vh, 220px);
+  width: 100%;
+  aspect-ratio: auto;
+  max-height: none;
+  padding: 0.75rem;
+  background: var(--paper);
+}
+@media (max-width: 480px) {
+  #experience .xp-stats { grid-template-columns: 1fr; }
+}
+
+/* pinned-section entrances — headings mirror the shared .rv-left reveal
+   every other section gets; the roster slides in as the pin engages */
+@media (prefers-reduced-motion: no-preference) {
+  #education.edu-staged .section-num,
+  #education.edu-staged .section-title,
+  #experience.xp-staged .section-num,
+  #experience.xp-staged .section-title {
+    opacity: 0;
+    transform: translateX(-44px);
+    transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #education.edu-staged .section-title,
+  #experience.xp-staged .section-title { transition-delay: 0.08s; }
+  #education.edu-staged.head-in .section-num,
+  #education.edu-staged.head-in .section-title,
+  #experience.xp-staged.head-in .section-num,
+  #experience.xp-staged.head-in .section-title {
+    opacity: 1;
+    transform: none;
+  }
+  #experience.xp-staged .xp-co {
+    opacity: 0;
+    transform: translateX(-64px);
+    transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #experience.xp-staged .xp-co:nth-child(2) { transition-delay: 0.07s; }
+  #experience.xp-staged .xp-co:nth-child(3) { transition-delay: 0.14s; }
+  #experience.xp-staged.stage-in .xp-co { opacity: 1; transform: none; }
+  #experience.xp-staged .xp-progress {
+    opacity: 0;
+    transform: translateX(28px);
+    transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.12s,
+                transform 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.12s;
+  }
+  #experience.xp-staged.head-in .xp-progress { opacity: 1; transform: none; }
+  #experience.xp-staged .xp-panels {
+    opacity: 0;
+    transform: translateY(26px);
+    transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.1s,
+                transform 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.1s;
+  }
+  #experience.xp-staged.stage-in .xp-panels { opacity: 1; transform: none; }
+}
+
+/* fallback — no pin: stacked cards, every employer highlighted */
+#experience:not(.xp-staged) .xp-stage { display: block; }
+#experience:not(.xp-staged) .xp-companies { display: none; }
+#experience:not(.xp-staged) .xp-panel + .xp-panel {
+  margin-top: clamp(1.1rem, 3vw, 1.6rem);
+}
+#experience:not(.xp-staged) .xp-panel-co {
+  display: block;
+  font: 900 clamp(1.5rem, 4vw, 2.6rem)/1.15 var(--f-sans);
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+  width: max-content;
+  max-width: 100%;
+  padding-right: clamp(3rem, 5vw, 4.5rem);
+}
+#experience:not(.xp-staged) .xp-datelines { max-width: 620px; }
+#experience:not(.xp-staged) .xp-slot {
+  flex: 0 0 auto;
+  aspect-ratio: 16 / 9;
+  max-height: none;
+  min-height: 200px;
+  max-width: 620px;
+}
+#experience:not(.xp-staged) .xp-stats { max-width: 620px; }
+
+/* short viewports while pinned: shed the slot (then summary) so the
+   panel always fits inside the 100vh pin without clipping */
+@media (max-height: 760px) {
+  #experience.xp-staged .xp-slot { display: none; }
+}
+@media (max-height: 620px) {
+  #experience.xp-staged .xp-summary { display: none; }
+}
+
+/* ════════════════════════════════════════════════════════════
+   CORPORATE (slider host) + ACADEMIC (timed cards host)
+   ════════════════════════════════════════════════════════════ */
+#corporate.cs-wrap {
+  position: relative;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+}
+/* paper header above the dark stage — same rhythm as every other .section
+   (top padding, title→lede gap, lede→stage gap) so Corporate and Academic
+   headers read identically */
+#corporate .stage-head {
+  padding: clamp(4rem, 12vh, 8rem) var(--gutter-x) clamp(2rem, 5vh, 3rem);
+}
+#corporate .stage-head .section-lede {
+  font: 500 0.72rem/1.6 var(--f-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  max-width: none;
+  margin-bottom: 0;
+}
+#academic.tc-section { padding-bottom: 0; }
+#academic .tc-lede {
+  font: 500 0.72rem/1.6 var(--f-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  max-width: none;
+}
+
+/* skill tags — subtle hover sharpen */
+#skills .skill-group .skill-tag { transition: border-color 0.25s ease, color 0.25s ease; }
+#skills .skill-group .skill-tag:hover { border-color: var(--ink); color: var(--ink); }
+
+/* ─── scroll-entrance reveal (paired with setupReveal) ───
+   .rv is added by JS only — reduced-motion / no-JS renders fully visible. */
+@media (prefers-reduced-motion: no-preference) {
+  .rv {
+    opacity: 0;
+    transform: translateY(30px);
+    transition:
+      opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1) var(--rvd, 0s),
+      transform 0.8s cubic-bezier(0.22, 1, 0.36, 1) var(--rvd, 0s);
+  }
+  .rv.rv-left  { transform: translateX(-44px); }
+  .rv.rv-right { transform: translateX(44px); }
+  .rv.rv-pop   { transform: translateY(16px); }
+  .rv.rv-fade  { transform: none; }
+  .rv.rv-in    { opacity: 1; transform: none; }
+}
+@media print {
+  .rv { opacity: 1 !important; transform: none !important; }
 }
 </style>

@@ -27,3 +27,5 @@ dist/
 !assets/**/*.png
 !public/**/*.png
 .gstack/
+graphify-out/
+.vercel

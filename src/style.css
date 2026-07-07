@@ -31,6 +31,12 @@
 
 html { scroll-behavior: smooth; scroll-padding-top: 80px; }
 
+/* Clip (not hidden): entrance transforms (.rv-right translateX) poke past the
+   viewport pre-reveal; clip discards that overflow without creating a scroll
+   container, so position: sticky (topbar, hero stage, pinned sections) keeps
+   working. */
+html, body { overflow-x: clip; }
+
 html, body, #app {
   width: 100%;
   min-height: 100%;

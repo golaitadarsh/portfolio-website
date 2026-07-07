@@ -2,8 +2,11 @@
 import * as THREE from 'three'
 import { onMounted, ref, onUnmounted, defineAsyncComponent } from 'vue'
 
-import basePhotoUrl     from '../assets/base-photo.png?url'
-import layeredPhotoUrl  from '../assets/layered-photo.png?url'
+// Lossless WebP re-encodes of the original PNGs (identical pixels, ~55%
+// smaller — saves ~1MB off the critical first-paint payload). The .png
+// sources stay in assets/ as the editing masters.
+import basePhotoUrl     from '../assets/base-photo.webp?url'
+import layeredPhotoUrl  from '../assets/layered-photo.webp?url'
 
 const DotField = defineAsyncComponent(() => import('./components/dot-field/DotField.vue'))
 
@@ -395,6 +398,14 @@ onMounted(() => {
   }
 
   // ── render loop ───────────────────────────────────────────────────────────
+  // Sleep gate: once the page has scrolled away, the cursor is off the hero,
+  // and no phantom is running, the dye fully decays within ~1s and every
+  // further frame renders identical pixels (the idle parallax drift is
+  // ±0.0005 UV ≈ sub-pixel). After a generous quiet window, skip sim+render
+  // until the cursor returns or the page scrolls back to top. The loop keeps
+  // ticking so wake conditions are re-checked every frame.
+  const QUIET_FRAMES_BEFORE_SLEEP = 240
+  let quietFrames = 0
   let last = performance.now()
   function animate() {
     animId = requestAnimationFrame(animate)
@@ -435,6 +446,20 @@ onMounted(() => {
     // the swept path ends so the eye can register the glow.
     if (phantomGlowMs > 0 && !mouseOnScreen) {
       phantomGlowMs = Math.max(0, phantomGlowMs - dt * 1000)
+    }
+
+    const heroActive =
+      !scrolled || mouseOnScreen || phantomActive || phantomGlowMs > 0 ||
+      revealStrength >= 0.01
+    if (heroActive) {
+      quietFrames = 0
+    } else if (++quietFrames > QUIET_FRAMES_BEFORE_SLEEP) {
+      quietFrames = QUIET_FRAMES_BEFORE_SLEEP + 1
+      // Keep prev-cursor synced while asleep so the first frame after wake
+      // computes the same small delta it would have in an always-on loop.
+      prevMouse.x = mouse.x
+      prevMouse.y = mouse.y
+      return
     }
 
     // Subtle idle drift when off-screen — keeps parallax breathing

@@ -34,8 +34,10 @@ const setLighting = (scene: THREE.Scene, opts: LightingOptions = {}) => {
   const path = dirLastSlash >= 0 ? hdrPath.slice(0, dirLastSlash + 1) : "";
   const file = dirLastSlash >= 0 ? hdrPath.slice(dirLastSlash + 1) : hdrPath;
 
+  let envTexture: THREE.Texture | null = null;
   new RGBELoader().setPath(path).load(file, (texture) => {
     texture.mapping = THREE.EquirectangularReflectionMapping;
+    envTexture = texture;
     scene.environment = texture;
     (scene as any).environmentIntensity = 0;
     (scene as any).environmentRotation?.set?.(5.76, 85.85, 1);
@@ -78,7 +80,15 @@ const setLighting = (scene: THREE.Scene, opts: LightingOptions = {}) => {
     });
   }
 
-  return { setPointLight, turnOnLights };
+  function dispose() {
+    envTexture?.dispose();
+    envTexture = null;
+    scene.environment = null;
+    directionalLight.dispose();
+    pointLight.dispose();
+  }
+
+  return { setPointLight, turnOnLights, dispose };
 };
 
 export default setLighting;

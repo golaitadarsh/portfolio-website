@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from "vue";
-import { onMounted, ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 const cn = (...a: unknown[]) =>
   a.filter((v): v is string => typeof v === "string" && v.length > 0).join(" ");
 
@@ -74,6 +74,11 @@ function pointerPrototype(): Pointer {
 }
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
+
+// Populated in onMounted; invoked from onBeforeUnmount. Without this the rAF
+// loop, window/body listeners and the WebGL context all outlive the component
+// (route change away from '/' leaks a whole running fluid sim per visit).
+let disposeSim: (() => void) | null = null;
 
 onMounted(() => {
   const canvas = canvasRef.value;
@@ -923,16 +928,32 @@ onMounted(() => {
   }
 
   function scaleByPixelRatio(input: number) {
-    const pixelRatio = window.devicePixelRatio || 1;
+    // Cap at 2 like every other canvas on the site (DotField, HeroSection).
+    // The dye is a soft gradient — super-sampling past 2x is invisible and
+    // quadruples fill cost on 3x-DPR displays.
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
     return Math.floor(input * pixelRatio);
   }
 
   // -------------------- Simulation Setup --------------------
   updateKeywords();
+  // Size the canvas before creating FBOs and before any pointer event maps
+  // clientX/Y → texcoords (they divide by canvas.width/height).
+  resizeCanvas();
   initFramebuffers();
 
   let lastUpdateTime = Date.now();
   let colorUpdateTimer = 0.0;
+
+  // Single rAF loop, gated by pointer activity. Previously updateFrame() was
+  // started once at mount AND again inside the first-mousemove bootstrap, so
+  // two full sim loops ran every frame forever. The loop now also sleeps once
+  // the dye has fully dissipated (DENSITY_DISSIPATION 3.5 → alpha < 1e-4
+  // after ~3s), where rendering more frames produces identical transparent
+  // pixels. Any pointer event wakes it instantly.
+  let rafId: number | null = null;
+  let lastInteraction = Date.now();
+  const IDLE_TIMEOUT_MS = 3200;
 
   function updateFrame() {
     const dt = calcDeltaTime();
@@ -941,7 +962,19 @@ onMounted(() => {
     applyInputs();
     step(dt);
     render(null);
-    requestAnimationFrame(updateFrame);
+    if (Date.now() - lastInteraction > IDLE_TIMEOUT_MS) {
+      rafId = null;
+      return;
+    }
+    rafId = requestAnimationFrame(updateFrame);
+  }
+
+  function wake() {
+    lastInteraction = Date.now();
+    if (rafId === null) {
+      lastUpdateTime = Date.now();
+      rafId = requestAnimationFrame(updateFrame);
+    }
   }
 
   function calcDeltaTime() {
@@ -1288,83 +1321,61 @@ onMounted(() => {
   }
 
   // -------------------- Event Listeners --------------------
-  window.addEventListener("mousedown", (e) => {
+  // First splat needs a color before updateColors() has run its first cycle —
+  // matches the old first-mousemove bootstrap, which generated one eagerly.
+  pointers[0].color = generateColor();
+
+  const onMouseDown = (e: MouseEvent) => {
     const pointer = pointers[0];
     const posX = scaleByPixelRatio(e.clientX);
     const posY = scaleByPixelRatio(e.clientY);
     updatePointerDownData(pointer, -1, posX, posY);
     clickSplat(pointer);
-  });
+    wake();
+  };
+  window.addEventListener("mousedown", onMouseDown);
 
-  // Start rendering on first mouse move
-  function handleFirstMouseMove(e: MouseEvent) {
+  const onMouseMove = (e: MouseEvent) => {
     const pointer = pointers[0];
     const posX = scaleByPixelRatio(e.clientX);
     const posY = scaleByPixelRatio(e.clientY);
-    const color = generateColor();
-    updateFrame();
-    updatePointerMoveData(pointer, posX, posY, color);
-    document.body.removeEventListener("mousemove", handleFirstMouseMove);
-  }
-  document.body.addEventListener("mousemove", handleFirstMouseMove);
+    updatePointerMoveData(pointer, posX, posY, pointer.color);
+    wake();
+  };
+  window.addEventListener("mousemove", onMouseMove);
 
-  window.addEventListener("mousemove", (e) => {
-    const pointer = pointers[0];
-    const posX = scaleByPixelRatio(e.clientX);
-    const posY = scaleByPixelRatio(e.clientY);
-    const color = pointer.color;
-    updatePointerMoveData(pointer, posX, posY, color);
-  });
-
-  // Start rendering on first touch
-  function handleFirstTouchStart(e: TouchEvent) {
+  const onTouchStart = (e: TouchEvent) => {
     const touches = e.targetTouches;
     const pointer = pointers[0];
     for (let i = 0; i < touches.length; i++) {
       const posX = scaleByPixelRatio(touches[i].clientX);
       const posY = scaleByPixelRatio(touches[i].clientY);
-      updateFrame();
       updatePointerDownData(pointer, touches[i].identifier, posX, posY);
     }
-    document.body.removeEventListener("touchstart", handleFirstTouchStart);
-  }
-  document.body.addEventListener("touchstart", handleFirstTouchStart);
+    wake();
+  };
+  window.addEventListener("touchstart", onTouchStart, false);
 
-  window.addEventListener(
-    "touchstart",
-    (e) => {
-      const touches = e.targetTouches;
-      const pointer = pointers[0];
-      for (let i = 0; i < touches.length; i++) {
-        const posX = scaleByPixelRatio(touches[i].clientX);
-        const posY = scaleByPixelRatio(touches[i].clientY);
-        updatePointerDownData(pointer, touches[i].identifier, posX, posY);
-      }
-    },
-    false,
-  );
+  const onTouchMove = (e: TouchEvent) => {
+    const touches = e.targetTouches;
+    const pointer = pointers[0];
+    for (let i = 0; i < touches.length; i++) {
+      const posX = scaleByPixelRatio(touches[i].clientX);
+      const posY = scaleByPixelRatio(touches[i].clientY);
+      updatePointerMoveData(pointer, posX, posY, pointer.color);
+    }
+    wake();
+  };
+  window.addEventListener("touchmove", onTouchMove, false);
 
-  window.addEventListener(
-    "touchmove",
-    (e) => {
-      const touches = e.targetTouches;
-      const pointer = pointers[0];
-      for (let i = 0; i < touches.length; i++) {
-        const posX = scaleByPixelRatio(touches[i].clientX);
-        const posY = scaleByPixelRatio(touches[i].clientY);
-        updatePointerMoveData(pointer, posX, posY, pointer.color);
-      }
-    },
-    false,
-  );
-
-  window.addEventListener("touchend", (e) => {
+  const onTouchEnd = (e: TouchEvent) => {
     const touches = e.changedTouches;
     const pointer = pointers[0];
     for (let i = 0; i < touches.length; i++) {
       updatePointerUpData(pointer);
     }
-  });
+  };
+  window.addEventListener("touchend", onTouchEnd);
   // ------------------------------------------------------------
   // Add watchers for prop changes
   watch(
@@ -1391,8 +1402,27 @@ onMounted(() => {
     },
   );
 
-  // Start the animation
-  updateFrame();
+  // No eager loop start: the canvas is fully transparent until the first
+  // pointer event, so rendering before then produces identical (empty)
+  // frames. wake() starts the loop on the first mouse/touch input.
+
+  disposeSim = () => {
+    if (rafId !== null) cancelAnimationFrame(rafId);
+    rafId = null;
+    // Park the idle clock so a queued frame can't reschedule.
+    lastInteraction = 0;
+    window.removeEventListener("mousedown", onMouseDown);
+    window.removeEventListener("mousemove", onMouseMove);
+    window.removeEventListener("touchstart", onTouchStart);
+    window.removeEventListener("touchmove", onTouchMove);
+    window.removeEventListener("touchend", onTouchEnd);
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+  };
+});
+
+onBeforeUnmount(() => {
+  disposeSim?.();
+  disposeSim = null;
 });
 </script>
 

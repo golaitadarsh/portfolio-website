@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref } from 'vue'
+import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 
 interface Props {
   intensity?: 'subtle' | 'medium' | 'strong'
+  /** When true (component fully occluded — e.g. doors closed), the rAF loop
+   *  sleeps. The beam field freezes in place; since nothing is visible while
+   *  paused, the resumed frame is indistinguishable from a running one. */
+  paused?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   intensity: 'strong',
+  paused: false,
 })
 
 interface Beam {
@@ -20,6 +25,7 @@ interface Beam {
   hue: number
   pulse: number
   pulseSpeed: number
+  sprite: HTMLCanvasElement | null
 }
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -29,9 +35,52 @@ const MINIMUM_BEAMS = 20
 
 const opacityMap = { subtle: 0.35, medium: 0.55, strong: 0.8 } as const
 
+// The old draw path set `ctx.filter = 'blur(35px)'` and re-blurred every
+// gradient rect on every frame — by far the most expensive 2D-canvas work on
+// the page. The gradient SHAPE of a beam only changes when the beam resets
+// (new width/length/hue); only its overall alpha pulses per frame, and all
+// gradient stops scale linearly with that alpha. So each beam's blurred
+// gradient is baked once into a sprite at unit alpha, and the frame loop just
+// drawImage()s it with globalAlpha = the pulsing opacity — pixel-equivalent
+// output (Gaussian blur is rotation-invariant and alpha is linear).
+//
+// Sprites are baked at 1/4 scale: under 35px baked blur + ~52px CSS blur, the
+// upscale is invisible, and it keeps 30 sprites at ~8MB total instead of 120MB.
+const SPRITE_SCALE = 0.25
+const BLUR_PX = 35
+const PAD = BLUR_PX * 2
+
+function bakeSprite(beam: Beam) {
+  const w = Math.max(1, Math.ceil((beam.width + PAD * 2) * SPRITE_SCALE))
+  const h = Math.max(1, Math.ceil((beam.length + PAD * 2) * SPRITE_SCALE))
+  const off = document.createElement('canvas')
+  off.width = w
+  off.height = h
+  const c = off.getContext('2d')
+  if (!c) {
+    beam.sprite = null
+    return
+  }
+  // All coordinates pre-multiplied by SPRITE_SCALE with an identity CTM —
+  // engines disagree on whether ctx.filter blur radii track the transform,
+  // so device-space math keeps the result deterministic everywhere.
+  c.filter = `blur(${BLUR_PX * SPRITE_SCALE}px)`
+  const pad = PAD * SPRITE_SCALE
+  const gradient = c.createLinearGradient(0, pad, 0, pad + beam.length * SPRITE_SCALE)
+  gradient.addColorStop(0, `hsla(${beam.hue}, 90%, 65%, 0)`)
+  gradient.addColorStop(0.1, `hsla(${beam.hue}, 90%, 65%, 0.5)`)
+  gradient.addColorStop(0.4, `hsla(${beam.hue}, 90%, 65%, 1)`)
+  gradient.addColorStop(0.6, `hsla(${beam.hue}, 90%, 65%, 1)`)
+  gradient.addColorStop(0.9, `hsla(${beam.hue}, 90%, 65%, 0.5)`)
+  gradient.addColorStop(1, `hsla(${beam.hue}, 90%, 65%, 0)`)
+  c.fillStyle = gradient
+  c.fillRect(pad, pad, beam.width * SPRITE_SCALE, beam.length * SPRITE_SCALE)
+  beam.sprite = off
+}
+
 function createBeam(width: number, height: number): Beam {
   const angle = -35 + Math.random() * 10
-  return {
+  const beam: Beam = {
     x: Math.random() * width * 1.5 - width * 0.25,
     y: Math.random() * height * 1.5 - height * 0.25,
     width: 30 + Math.random() * 60,
@@ -42,7 +91,10 @@ function createBeam(width: number, height: number): Beam {
     hue: 70 + Math.random() * 30,
     pulse: Math.random() * Math.PI * 2,
     pulseSpeed: 0.02 + Math.random() * 0.03,
+    sprite: null,
   }
+  bakeSprite(beam)
+  return beam
 }
 
 onMounted(() => {
@@ -84,34 +136,47 @@ onMounted(() => {
     beam.speed = 0.5 + Math.random() * 0.4
     beam.hue = 70 + (index * 30) / totalBeams
     beam.opacity = 0.2 + Math.random() * 0.1
+    bakeSprite(beam)
     return beam
   }
 
   function drawBeam(c: CanvasRenderingContext2D, beam: Beam) {
+    if (!beam.sprite) return
     c.save()
     c.translate(beam.x, beam.y)
     c.rotate((beam.angle * Math.PI) / 180)
-
-    const pulsingOpacity =
+    c.globalAlpha = Math.min(
+      1,
       beam.opacity * (0.8 + Math.sin(beam.pulse) * 0.2) * opacityMap[props.intensity]
-
-    const gradient = c.createLinearGradient(0, 0, 0, beam.length)
-    gradient.addColorStop(0, `hsla(${beam.hue}, 90%, 65%, 0)`)
-    gradient.addColorStop(0.1, `hsla(${beam.hue}, 90%, 65%, ${pulsingOpacity * 0.5})`)
-    gradient.addColorStop(0.4, `hsla(${beam.hue}, 90%, 65%, ${pulsingOpacity})`)
-    gradient.addColorStop(0.6, `hsla(${beam.hue}, 90%, 65%, ${pulsingOpacity})`)
-    gradient.addColorStop(0.9, `hsla(${beam.hue}, 90%, 65%, ${pulsingOpacity * 0.5})`)
-    gradient.addColorStop(1, `hsla(${beam.hue}, 90%, 65%, 0)`)
-
-    c.fillStyle = gradient
-    c.fillRect(-beam.width / 2, 0, beam.width, beam.length)
+    )
+    c.drawImage(
+      beam.sprite,
+      -beam.width / 2 - PAD,
+      -PAD,
+      beam.width + PAD * 2,
+      beam.length + PAD * 2
+    )
     c.restore()
   }
 
+  // Second gate: the whole stage can scroll out of the viewport (sections
+  // after the door reveal) — no point animating an off-screen canvas.
+  let inViewport = true
+  const visObs = new IntersectionObserver((entries) => {
+    inViewport = entries.some((e) => e.isIntersecting)
+    if (inViewport && rafId === 0 && !props.paused) {
+      rafId = requestAnimationFrame(animate)
+    }
+  })
+  visObs.observe(parent)
+
   function animate() {
     if (!canvas || !ctx) return
+    if (props.paused || !inViewport) {
+      rafId = 0
+      return
+    }
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.filter = 'blur(35px)'
     const totalBeams = beams.length
     beams.forEach((beam, index) => {
       beam.y -= beam.speed
@@ -123,10 +188,21 @@ onMounted(() => {
   }
   animate()
 
+  watch(
+    () => props.paused,
+    (paused) => {
+      if (!paused && rafId === 0 && inViewport) {
+        rafId = requestAnimationFrame(animate)
+      }
+    }
+  )
+
   onBeforeUnmount(() => {
     ro.disconnect()
+    visObs.disconnect()
     window.removeEventListener('resize', updateCanvasSize)
     if (rafId) cancelAnimationFrame(rafId)
+    rafId = 0
   })
 })
 </script>
@@ -150,14 +226,18 @@ onMounted(() => {
   inset: 0;
   width: 100%;
   height: 100%;
-  filter: blur(15px);
+  /* Was blur(15px) here + backdrop-filter blur(50px) on .beams-veil. The
+     backdrop blur re-blurred the full viewport every frame — the single most
+     expensive compositor op on the page. Gaussian blurs compose in
+     quadrature: √(15² + 50²) ≈ 52px, and the only content behind the veil is
+     this canvas over a flat dark background, so folding the veil's blur into
+     the canvas filter is visually identical at a fraction of the cost. */
+  filter: blur(52px);
 }
 .beams-veil {
   position: absolute;
   inset: 0;
   background: rgba(14, 17, 9, 0.05);
-  backdrop-filter: blur(50px);
-  -webkit-backdrop-filter: blur(50px);
   animation: beams-veil-pulse 10s ease-in-out infinite;
 }
 @keyframes beams-veil-pulse {
