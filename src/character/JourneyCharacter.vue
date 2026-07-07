@@ -153,6 +153,7 @@ onMounted(() => {
   let charRoot: THREE.Object3D | null = null;
   let headBone: THREE.Object3D | null = null;
   let hipsBone: THREE.Object3D | null = null;
+  let handBone: THREE.Object3D | null = null;
   let mixer: THREE.AnimationMixer | null = null;
   let rafId = 0;
   let introTimer: number | undefined;
@@ -319,25 +320,50 @@ onMounted(() => {
   // The stage frames him passport-close: his full-body bbox projects ~3
   // viewports tall. Lerping that straight to the small summary slot shrinks
   // him 4-5× mid-air over the white page — reads as a broken zoom, not a
-  // jump. So the flight has two beats:
+  // jump. Both journeys are one-shot cinematics: the page scroll-tweens
+  // underneath with user scroll locked (Portfolio.vue), so the timeline can
+  // never be scrubbed into a half-stage/half-summary state.
+  //
+  // Forward — THE FALL:
   //   recede · he steps BACK into the doorway (a real 3D depth move — the
   //            solver pushes him away from the camera) until he's full-body
   //            at roughly slot size, while the dark stage still fills the
   //            screen. Matches the jump clip's crouch anticipation.
-  //   leap   · near-constant-size arc from the doorway down to the slot.
-  // The reverse flight mirrors it: arc up to the doorway, then step forward
-  // into the close-up as the stage scrolls back in.
+  //   fall   · he steps off the edge and free-falls: gravity easing (slow
+  //            start, accelerating), a slight body lean, the page rushing
+  //            up past him, landing in the slot on the jump clip's crouch.
+  // Reverse — THE ROPE:
+  //   grab   · a rope drops from above the frame down to his hand.
+  //   pull   · he's hauled up in rhythmic tugs (speed pulses, hand-over-
+  //            hand) while the page tweens back to the stage; the rope
+  //            sways and stays pinned to his hand bone every frame.
+  //   step-in· at the doorway the rope retracts off the top and he steps
+  //            forward into the original passport close-up.
   let flight: {
     t: number;
     dur: number;
     start: { x: number; y: number; w: number; h: number };
     back: boolean;
     fromStage: boolean;
+    fromSlot: boolean;
   } | null = null;
-  const FLIGHT_DUR = 1.7;
-  const BACK_DUR = 1.2;
-  const RECEDE = 0.34; // forward: share of flight spent receding on stage
-  const BACK_GROW = 0.62; // reverse: share spent arcing before the step-in
+  const FLIGHT_DUR = 2.0; // keep in sync with Portfolio's DESCEND_MS
+  const BACK_DUR = 1.9; // keep in sync with Portfolio's RETURN_MS
+  const RECEDE = 0.3; // forward: share of flight spent receding on stage
+  const GRAB = 0.16; // reverse: share spent dropping the rope to his hand
+  const PULL_END = 0.78; // reverse: rope pull ends at the doorway
+  const TUGS = 3; // hand-over-hand pulls during the rise
+
+  // Gravity read: starts slow, accelerates, still carrying speed at touch-
+  // down so the landing crouch absorbs real momentum (e = 2t² - t³).
+  const fallEase = (t: number) => t * t * (2 - t);
+  // Monotonic rise whose speed pulses TUGS times — each pull is a distinct
+  // heave on the rope. Derivative = 1 - A·cos(2πNt) stays positive (A<1).
+  const tugEase = (t: number) => {
+    const A = 0.75;
+    const p = t - (A / (2 * Math.PI * TUGS)) * Math.sin(2 * Math.PI * TUGS * t);
+    return easeInOutCubic(p);
+  };
 
   /** Full-body rect standing in the doorway — recede target / leap origin.
    *  Anchored to the live stage rect so it scrolls with the page. */
@@ -352,11 +378,19 @@ onMounted(() => {
     return { x: st.x + st.w / 2 - w / 2, y: st.y, w, h };
   }
 
-  /** Piecewise flight path — rect plus arc share (0..1) at time fraction t. */
+  /** Piecewise flight path at time fraction t.
+   *  `fall` — 0..1 progress through the forward free-fall (drives the lean).
+   *  `rope` — 0..1 how far the rope has dropped / how attached it still is.
+   *  `pull` — 0..1 progress through the rope pull (drives the sway). */
   function flightFrame(
     f: NonNullable<typeof flight>,
     tNow: number
-  ): { r: { x: number; y: number; w: number; h: number }; arc: number } {
+  ): {
+    r: { x: number; y: number; w: number; h: number };
+    fall: number;
+    rope: number;
+    pull: number;
+  } {
     if (!f.back) {
       if (tNow < RECEDE) {
         const e = easeOutCubic(tNow / RECEDE);
@@ -364,17 +398,62 @@ onMounted(() => {
         // to the (scrolling) doorway while receding; converted mid-air
         // flights recede from wherever they were.
         const from = f.fromStage ? stageScreenRect() : f.start;
-        return { r: lerpRect(from, launchRect(), e), arc: 0 };
+        return { r: lerpRect(from, launchRect(), e), fall: 0, rope: 0, pull: 0 };
       }
-      const e = easeInOutCubic((tNow - RECEDE) / (1 - RECEDE));
-      return { r: lerpRect(launchRect(), liveSlotRect(), e), arc: Math.sin(Math.PI * e) };
+      const u = (tNow - RECEDE) / (1 - RECEDE);
+      const e = fallEase(u);
+      return { r: lerpRect(launchRect(), liveSlotRect(), e), fall: u, rope: 0, pull: 0 };
     }
-    if (tNow < BACK_GROW) {
-      const e = easeInOutCubic(tNow / BACK_GROW);
-      return { r: lerpRect(f.start, launchRect(), e), arc: Math.sin(Math.PI * e) };
+    // Reverse. Summary-origin returns ride the live slot until the rope has
+    // him (the page is already tweening up — staying glued to the slot reads
+    // as "still standing on the page"); converted mid-air returns hang where
+    // they were.
+    const origin = () => (f.fromSlot && slotEl ? liveSlotRect() : f.start);
+    if (tNow < GRAB) {
+      return { r: origin(), fall: 0, rope: easeOutCubic(tNow / GRAB), pull: 0 };
     }
-    const e = easeInOutCubic((tNow - BACK_GROW) / (1 - BACK_GROW));
-    return { r: lerpRect(launchRect(), stageScreenRect(), e), arc: 0 };
+    if (tNow < PULL_END) {
+      const u = (tNow - GRAB) / (PULL_END - GRAB);
+      return { r: lerpRect(origin(), launchRect(), tugEase(u)), fall: 0, rope: 1, pull: u };
+    }
+    const e = easeInOutCubic((tNow - PULL_END) / (1 - PULL_END));
+    return { r: lerpRect(launchRect(), stageScreenRect(), e), fall: 0, rope: 1 - e, pull: 1 };
+  }
+
+  // ── rope ───────────────────────────────────────────────────────────
+  // A dark ink line in the SAME scene (same camera, same depth as him) —
+  // a quadratic tube from above the top frustum edge down to his hand
+  // bone, rebuilt per frame so it stays pinned whatever the pose does.
+  let ropeMesh: THREE.Mesh | null = null;
+  let ropeMat: THREE.MeshBasicMaterial | null = null;
+
+  /** drop: 0 hidden → 1 fully attached to the hand. sway: -1..1 pendulum. */
+  function updateRope(drop: number, sway: number) {
+    if (drop <= 0.001 || !charRoot) {
+      if (ropeMesh) ropeMesh.visible = false;
+      return;
+    }
+    const hand = new THREE.Vector3();
+    (handBone || headBone || charRoot).getWorldPosition(hand);
+    // Anchor above the visible frame at his depth so the rope always runs
+    // off the top of the screen, never dangles from a visible point.
+    const ndc = hand.clone().project(camera);
+    const anchor = new THREE.Vector3(ndc.x + sway * 0.04, 1.4, ndc.z).unproject(camera);
+    const tip = anchor.clone().lerp(hand, drop);
+    const mid = anchor.clone().lerp(tip, 0.55);
+    mid.x += sway * worldH * 0.05; // slight bow — reads as slack + swing
+    const curve = new THREE.QuadraticBezierCurve3(anchor, mid, tip);
+    const geo = new THREE.TubeGeometry(curve, 12, worldH * 0.012, 6);
+    if (!ropeMesh) {
+      ropeMat = new THREE.MeshBasicMaterial({ color: 0x2b2318 });
+      ropeMesh = new THREE.Mesh(geo, ropeMat);
+      ropeMesh.frustumCulled = false;
+      scene.add(ropeMesh);
+    } else {
+      ropeMesh.geometry.dispose();
+      ropeMesh.geometry = geo;
+    }
+    ropeMesh.visible = true;
   }
 
   let pendingBreakout: HTMLElement | null = null;
@@ -384,7 +463,7 @@ onMounted(() => {
       slotEl = el;
       const from = flightFrame(flight, flight.t).r;
       phase = "flight";
-      flight = { t: 0, dur: FLIGHT_DUR, start: from, back: false, fromStage: false };
+      flight = { t: 0, dur: FLIGHT_DUR, start: from, back: false, fromStage: false, fromSlot: false };
       targetYaw = IDLE_YAW;
       busy = false;
       void playOnce("jump", 0.22);
@@ -414,7 +493,7 @@ onMounted(() => {
       };
     }
     phase = "flight";
-    flight = { t: 0, dur: FLIGHT_DUR, start, back: false, fromStage: true };
+    flight = { t: 0, dur: FLIGHT_DUR, start, back: false, fromStage: true, fromSlot: false };
     teleported.value = true;
     targetYaw = IDLE_YAW;
     void nextTick(() => resizeToBox());
@@ -430,12 +509,13 @@ onMounted(() => {
       if (phase !== "stage") snapToStage();
       return;
     }
+    const fromSlot = phase === "summary";
     const start =
       phase === "flight" && flight
         ? flightFrame(flight, flight.t).r
         : liveSlotRect();
     phase = "flight-back";
-    flight = { t: 0, dur: BACK_DUR, start, back: true, fromStage: false };
+    flight = { t: 0, dur: BACK_DUR, start, back: true, fromStage: false, fromSlot };
     setPushingImpl(false);
     targetYaw = stageYaw;
     busy = false;
@@ -453,7 +533,9 @@ onMounted(() => {
     if (charRoot) {
       charRoot.position.copy(stagePos);
       charRoot.rotation.y = stageYaw;
+      charRoot.rotation.z = 0;
     }
+    updateRope(0, 0);
     targetYaw = stageYaw;
     if (stageIdleAction) crossfadeTo(stageIdleAction, 0.3);
     headFollow = true;
@@ -553,6 +635,8 @@ onMounted(() => {
     targetYaw = stageYaw;
     headBone = char.getObjectByName("Head") || char.getObjectByName("Neck") || null;
     hipsBone = char.getObjectByName("Hips") || null;
+    handBone =
+      char.getObjectByName("RightHand") || char.getObjectByName("LeftHand") || null;
     hipsRestY = hipsBone ? hipsBone.position.y : 0;
 
     char.updateWorldMatrix(true, true);
@@ -659,21 +743,37 @@ onMounted(() => {
 
     if ((phase === "flight" || phase === "flight-back") && flight && slotEl) {
       flight.t = Math.min(1, flight.t + delta / flight.dur);
-      const { r, arc } = flightFrame(flight, flight.t);
-      placeForRect(r, arc * window.innerHeight * 0.16);
-      // Slot shadow: blooms late on the leap's approach, gone the moment
-      // the return flight lifts off. leapE = progress through the airborne
-      // segment (recede / step-in beats keep the shadow hidden).
-      const leapE = flight.back
-        ? Math.min(1, flight.t / BACK_GROW)
-        : Math.max(0, (flight.t - RECEDE) / (1 - RECEDE));
-      lift = flight.back ? Math.min(1, leapE * 2) : 1 - Math.pow(easeInOutCubic(leapE), 3);
+      const fr = flightFrame(flight, flight.t);
+      placeForRect(fr.r, 0);
+      if (charRoot) {
+        // Forward: a slight backward lean sells the free-fall; eases out
+        // right before touchdown so the crouch lands square.
+        // Reverse: a small pendulum swing while he hangs on the rope.
+        const leanTarget = !flight.back
+          ? Math.sin(Math.PI * Math.min(1, fr.fall * 1.15)) * 0.07
+          : fr.rope >= 1
+            ? Math.sin(flight.t * 13) * 0.035 * (1 - fr.pull * 0.6)
+            : 0;
+        charRoot.rotation.z = THREE.MathUtils.lerp(charRoot.rotation.z, leanTarget, 0.15);
+      }
+      if (flight.back) {
+        const sway = Math.sin(flight.t * 13) * (1 - fr.pull * 0.6);
+        updateRope(fr.rope, sway);
+      } else {
+        updateRope(0, 0); // a converted direction-change must drop the rope
+      }
+      // Slot shadow: forward, it blooms only at the very end of the fall
+      // (impact); reverse, it's gone the instant the rope lifts him.
+      lift = flight.back
+        ? Math.min(1, flight.t / GRAB)
+        : 1 - Math.pow(fr.fall, 5);
       if (flight.t >= 1) {
         if (flight.back) {
           snapToStage();
         } else {
           phase = "summary";
           flight = null;
+          if (charRoot) charRoot.rotation.z = 0;
           backToIdle(0.4);
         }
       }
@@ -734,6 +834,12 @@ onMounted(() => {
     container.removeEventListener("touchmove", onTouchMove);
     container.removeEventListener("touchend", onTouchEndEv);
     window.removeEventListener("resize", onResize);
+    if (ropeMesh) {
+      scene.remove(ropeMesh);
+      ropeMesh.geometry.dispose();
+      ropeMat?.dispose();
+      ropeMesh = null;
+    }
     disposeCharacter();
     light.dispose();
     scene.traverse((obj) => {

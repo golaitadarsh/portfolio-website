@@ -567,13 +567,14 @@ function setupExperiencePin(): (() => void) | null {
 }
 
 // Summary: the character's journey destination. On desktop the SAME
-// character (same canvas — see JourneyCharacter.vue) breaks out of the door
-// stage the moment the runway releases: a scroll tween carries the page to
-// the summary while he flies from his on-stage position to the slot beside
-// the text. While pinned, icon buttons play one-shot clips; the final pin
-// segment scrubs a contact-locked push-out — he walks INTO the text block
-// first, then text and character travel off the left edge together at the
-// same speed, like a real shove.
+// character (same canvas — see JourneyCharacter.vue) travels there via two
+// scripted, scroll-locked cinematics: the stage CTA drops him in a free-
+// fall while the page tweens down with him (sendHimDown), and scrolling
+// back up out of the summary drops a rope that hauls him home while the
+// page tweens up. While pinned, icon buttons play one-shot clips; the final
+// pin segment scrubs a contact-locked push-out — he walks INTO the text
+// block first, then text and character travel off the left edge together
+// at the same speed, like a real shove.
 const summaryRef = ref<HTMLElement | null>(null)
 const summarySlotRef = ref<HTMLElement | null>(null)
 const summaryCharRef = ref<any>(null) // non-staged fallback component
@@ -598,8 +599,31 @@ function playCharAction(name: string) {
 }
 
 // rAF scroll tween — deterministic timing so the flight and the page move
-// as one. Any real user input (wheel / touch / keys) cancels it; the flight
-// still lands correctly because it tracks the live slot rect.
+// as one. While a journey sequence runs, user scroll is HARD-LOCKED (wheel /
+// touch / key events preventDefault'd): the old scroll-scrubbed handoff let
+// a mid-tween wheel nudge freeze the page half-stage/half-summary with the
+// character stranded between. One-shot cinematic + lock = unbreakable.
+const DESCEND_MS = 2000 // matches FLIGHT_DUR in JourneyCharacter.vue
+const RETURN_MS = 1900 // matches BACK_DUR in JourneyCharacter.vue
+let seqLocked = false
+let seqUnlockTimer = 0
+function lockScrollFor(ms: number) {
+  seqLocked = true
+  clearTimeout(seqUnlockTimer)
+  seqUnlockTimer = window.setTimeout(() => {
+    seqLocked = false
+  }, ms + 200)
+}
+const blockScrollEv = (e: Event) => {
+  if (seqLocked) e.preventDefault()
+}
+const SCROLL_KEYS = new Set([
+  'Space', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End',
+])
+const blockScrollKeys = (e: KeyboardEvent) => {
+  if (seqLocked && SCROLL_KEYS.has(e.code)) e.preventDefault()
+}
+
 let scrollTweenRaf = 0
 function cancelScrollTween() {
   if (scrollTweenRaf) cancelAnimationFrame(scrollTweenRaf)
@@ -620,16 +644,21 @@ function tweenScrollTo(targetY: number, dur: number) {
   }
   scrollTweenRaf = requestAnimationFrame(step)
 }
-const cancelTweenOnInput = () => cancelScrollTween()
+const cancelTweenOnInput = () => {
+  if (!seqLocked) cancelScrollTween()
+}
 
-// Stage CTA — "send him down": tween the page to the summary; the scroll
-// handler below fires the breakout on the way, exactly as a manual scroll
-// would. One code path, no special cases.
+// Stage CTA — "send him down": THE way down. Locks user scroll, starts the
+// fall, and tweens the page underneath for the same duration — character
+// and page land together, nothing can interrupt.
 function sendHimDown() {
   const sec = summaryRef.value
-  if (!sec) return
-  const target = window.scrollY + sec.getBoundingClientRect().top
-  tweenScrollTo(target, 1450)
+  const jc = journeyRef.value
+  if (!sec || !jc?.breakout || !summarySlotRef.value) return
+  if (!charState.ready || charState.phase !== 'stage' || seqLocked) return
+  lockScrollFor(DESCEND_MS)
+  jc.breakout(summarySlotRef.value)
+  tweenScrollTo(window.scrollY + sec.getBoundingClientRect().top, DESCEND_MS)
 }
 
 const PUSH_START = 0.5   // pin progress where the push-out segment begins
@@ -640,7 +669,6 @@ function setupSummaryStage(): (() => void) | null {
   if (!sec) return null
   const mqMotion = matchMedia('(prefers-reduced-motion: reduce)')
   let raf = 0
-  let brokeOut = false
   let pushOn = false
   let lastY = window.scrollY
 
@@ -651,30 +679,29 @@ function setupSummaryStage(): (() => void) | null {
     if (!sumStaged.value) return
     const rect = sec!.getBoundingClientRect()
 
-    // Breakout: runway released, summary sliding in — fly the character out
-    // of the stage and glide the page so the landing is framed. The tween
-    // duration matches the flight so both settle together.
-    // tryBreakout, not a blind latch: the async component may not have
-    // mounted yet (hard refresh straight into the pin) — a failed attempt
-    // must stay retryable for the ready-retrigger in onCharState.
-    if (!brokeOut && goingDown && rect.top > 0 && rect.top < innerHeight * 0.92) {
-      if (tryBreakout()) {
-        brokeOut = true
-        tweenScrollTo(window.scrollY + rect.top, 1400)
-      }
+    // Scrolling down no longer starts the journey — the stage CTA does
+    // (sendHimDown). But the pin must never sit empty: if the user scrolled
+    // themselves fully into it (fast wheel past the button, anchor jump,
+    // hard refresh at #summary), he falls in from wherever the stage is.
+    // Retryable, not latched: the async component may not have mounted yet;
+    // onCharState re-fires a scroll event once it's ready.
+    if (
+      !seqLocked && charState.phase === 'stage' &&
+      rect.top <= 0 && rect.bottom >= innerHeight
+    ) {
+      tryBreakout()
     }
 
-    // Entered the pin without the flight (anchor jump past the summary,
-    // then scrolled back into it) — he still has to show up, flying in
-    // from wherever the stage is (off-screen above).
-    if (!brokeOut && rect.top <= 0 && rect.bottom >= innerHeight) {
-      if (tryBreakout()) brokeOut = true
-    }
-
-    // Reverse: user scrolled back up toward the stage — fly him home.
-    if (brokeOut && !goingDown && rect.top > innerHeight * 0.45) {
-      brokeOut = false
+    // Reverse: user scrolled back up out of the summary — drop him a rope.
+    // Locks scroll and tweens the page back to the stage while he's hauled
+    // up; only fires from a settled summary (never mid-flight).
+    if (
+      !seqLocked && charState.phase === 'summary' &&
+      !goingDown && rect.top > innerHeight * 0.45
+    ) {
+      lockScrollFor(RETURN_MS)
       journeyRef.value?.returnToStage?.()
+      tweenScrollTo(window.scrollY + rect.top - innerHeight, RETURN_MS)
     }
 
     const range = rect.height - innerHeight
@@ -722,14 +749,16 @@ function setupSummaryStage(): (() => void) | null {
       sec!.style.setProperty('--sum-appr', '0')
       sec!.style.setProperty('--sum-exit', '0')
       pushOn = false
-      if (brokeOut) {
-        brokeOut = false
-        journeyRef.value?.returnToStage?.()
-      }
+      if (charState.phase !== 'stage') journeyRef.value?.returnToStage?.()
     }
   }
   mqMotion.addEventListener?.('change', apply)
   addEventListener('resize', apply, { passive: true })
+  // Hard lock during journey sequences (passive:false so preventDefault
+  // works); outside a sequence, real input just cancels any leftover tween.
+  addEventListener('wheel', blockScrollEv, { passive: false })
+  addEventListener('touchmove', blockScrollEv, { passive: false })
+  addEventListener('keydown', blockScrollKeys)
   addEventListener('wheel', cancelTweenOnInput, { passive: true })
   addEventListener('touchstart', cancelTweenOnInput, { passive: true })
   addEventListener('keydown', cancelTweenOnInput)
@@ -738,9 +767,14 @@ function setupSummaryStage(): (() => void) | null {
     mqMotion.removeEventListener?.('change', apply)
     removeEventListener('resize', apply)
     removeEventListener('scroll', onScroll)
+    removeEventListener('wheel', blockScrollEv)
+    removeEventListener('touchmove', blockScrollEv)
+    removeEventListener('keydown', blockScrollKeys)
     removeEventListener('wheel', cancelTweenOnInput)
     removeEventListener('touchstart', cancelTweenOnInput)
     removeEventListener('keydown', cancelTweenOnInput)
+    clearTimeout(seqUnlockTimer)
+    seqLocked = false
     cancelScrollTween()
     io.disconnect()
     if (raf) cancelAnimationFrame(raf)
@@ -988,7 +1022,13 @@ onBeforeUnmount(() => {
               <h2 class="cr-headline">A <em>moving</em><br />operator — not a still one.</h2>
               <div class="cr-meta-stack">
                 <p class="cr-hint"><span class="cr-hint-dot" aria-hidden="true"></span>Move your cursor — he follows</p>
-                <button v-if="sumStaged" type="button" class="cr-cta" @click="sendHimDown">
+                <button
+                  v-if="sumStaged"
+                  type="button"
+                  class="cr-cta"
+                  :disabled="!charState.ready || charState.phase !== 'stage'"
+                  @click="sendHimDown"
+                >
                   Send him down<span class="cr-cta-arrow" aria-hidden="true">↓</span>
                 </button>
                 <p v-else class="cr-meta">Scroll to enter the work →</p>
@@ -2226,6 +2266,12 @@ main > section.section {
   box-shadow: 0 8px 28px rgba(219, 254, 82, 0.35);
 }
 .hs-sticky .cr-cta:active { transform: translateY(0); }
+.hs-sticky .cr-cta:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
 .hs-sticky .cr-cta-arrow {
   display: inline-block;
   animation: cr-cta-arrow 1.5s ease-in-out infinite;
