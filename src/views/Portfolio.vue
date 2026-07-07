@@ -27,7 +27,7 @@ const signatureMarkup = (() => {
   return svg.trim()
 })()
 
-const JourneyCharacter = defineAsyncComponent(() => import('../character/JourneyCharacter.vue'))
+const HeroCharacter = defineAsyncComponent(() => import('../character/HeroCharacter.vue'))
 const SummaryCharacter = defineAsyncComponent(() => import('../character/SummaryCharacter.vue'))
 
 const characterVisible = ref(false)
@@ -566,99 +566,27 @@ function setupExperiencePin(): (() => void) | null {
   }
 }
 
-// Summary: the character's journey destination. On desktop the SAME
-// character (same canvas — see JourneyCharacter.vue) travels there via two
-// scripted, scroll-locked cinematics: the stage CTA drops him in a free-
-// fall while the page tweens down with him (sendHimDown), and scrolling
-// back up out of the summary drops a rope that hauls him home while the
-// page tweens up. While pinned, icon buttons play one-shot clips; the final
-// pin segment scrubs a contact-locked push-out — he walks INTO the text
-// block first, then text and character travel off the left edge together
-// at the same speed, like a real shove.
+// Summary: self-contained interactive character (own canvas, own scene —
+// completely separate from the hero stage character). He jumps in when the
+// section scrolls into view, takes icon-button action requests while
+// pinned, and during the final pin segment scrubs a contact-locked
+// push-out — he walks INTO the text block first, then text and character
+// travel off the left edge together at the same speed, like a real shove.
+// The pushing clip only advances while the user is actually scrolling
+// (SummaryCharacter freezes it on scroll idle).
 const summaryRef = ref<HTMLElement | null>(null)
-const summarySlotRef = ref<HTMLElement | null>(null)
-const summaryCharRef = ref<any>(null) // non-staged fallback component
-const journeyRef = ref<any>(null)
+const summaryCharRef = ref<any>(null)
 const sumStaged = ref(false)
 
-// Live character state, emitted by JourneyCharacter — drives button states.
-const charState = reactive({ ready: false, busy: false, phase: 'stage', pushing: false })
-function onCharState(s: { ready: boolean; busy: boolean; phase: string; pushing: boolean }) {
-  const becameReady = s.ready && !charState.ready
+// Live character state, emitted by SummaryCharacter — drives button states.
+const charState = reactive({ ready: false, busy: false, pushing: false })
+function onCharState(s: { ready: boolean; busy: boolean; pushing: boolean }) {
   charState.ready = s.ready
   charState.busy = s.busy
-  charState.phase = s.phase
   charState.pushing = s.pushing
-  // The async component can mount AFTER the user has already jumped into
-  // the summary pin (hard refresh at #summary, instant anchor scroll): the
-  // scroll handler found no ref to call. Re-run it now that he exists.
-  if (becameReady) requestAnimationFrame(() => dispatchEvent(new Event('scroll')))
 }
 function playCharAction(name: string) {
-  journeyRef.value?.playAction?.(name)
-}
-
-// rAF scroll tween — deterministic timing so the flight and the page move
-// as one. While a journey sequence runs, user scroll is HARD-LOCKED (wheel /
-// touch / key events preventDefault'd): the old scroll-scrubbed handoff let
-// a mid-tween wheel nudge freeze the page half-stage/half-summary with the
-// character stranded between. One-shot cinematic + lock = unbreakable.
-const DESCEND_MS = 2000 // matches FLIGHT_DUR in JourneyCharacter.vue
-const RETURN_MS = 1900 // matches BACK_DUR in JourneyCharacter.vue
-let seqLocked = false
-let seqUnlockTimer = 0
-function lockScrollFor(ms: number) {
-  seqLocked = true
-  clearTimeout(seqUnlockTimer)
-  seqUnlockTimer = window.setTimeout(() => {
-    seqLocked = false
-  }, ms + 200)
-}
-const blockScrollEv = (e: Event) => {
-  if (seqLocked) e.preventDefault()
-}
-const SCROLL_KEYS = new Set([
-  'Space', 'ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End',
-])
-const blockScrollKeys = (e: KeyboardEvent) => {
-  if (seqLocked && SCROLL_KEYS.has(e.code)) e.preventDefault()
-}
-
-let scrollTweenRaf = 0
-function cancelScrollTween() {
-  if (scrollTweenRaf) cancelAnimationFrame(scrollTweenRaf)
-  scrollTweenRaf = 0
-}
-function tweenScrollTo(targetY: number, dur: number) {
-  cancelScrollTween()
-  const startY = window.scrollY
-  const dist = targetY - startY
-  if (Math.abs(dist) < 2) return
-  const t0 = performance.now()
-  const step = (now: number) => {
-    scrollTweenRaf = 0
-    const t = Math.min(1, (now - t0) / dur)
-    const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
-    window.scrollTo({ top: startY + dist * e, behavior: 'instant' as ScrollBehavior })
-    if (t < 1) scrollTweenRaf = requestAnimationFrame(step)
-  }
-  scrollTweenRaf = requestAnimationFrame(step)
-}
-const cancelTweenOnInput = () => {
-  if (!seqLocked) cancelScrollTween()
-}
-
-// Stage CTA — "send him down": THE way down. Locks user scroll, starts the
-// fall, and tweens the page underneath for the same duration — character
-// and page land together, nothing can interrupt.
-function sendHimDown() {
-  const sec = summaryRef.value
-  const jc = journeyRef.value
-  if (!sec || !jc?.breakout || !summarySlotRef.value) return
-  if (!charState.ready || charState.phase !== 'stage' || seqLocked) return
-  lockScrollFor(DESCEND_MS)
-  jc.breakout(summarySlotRef.value)
-  tweenScrollTo(window.scrollY + sec.getBoundingClientRect().top, DESCEND_MS)
+  summaryCharRef.value?.playAction?.(name)
 }
 
 const PUSH_START = 0.5   // pin progress where the push-out segment begins
@@ -670,40 +598,11 @@ function setupSummaryStage(): (() => void) | null {
   const mqMotion = matchMedia('(prefers-reduced-motion: reduce)')
   let raf = 0
   let pushOn = false
-  let lastY = window.scrollY
 
   function update() {
     raf = 0
-    const goingDown = window.scrollY > lastY
-    lastY = window.scrollY
     if (!sumStaged.value) return
     const rect = sec!.getBoundingClientRect()
-
-    // Scrolling down no longer starts the journey — the stage CTA does
-    // (sendHimDown). But the pin must never sit empty: if the user scrolled
-    // themselves fully into it (fast wheel past the button, anchor jump,
-    // hard refresh at #summary), he falls in from wherever the stage is.
-    // Retryable, not latched: the async component may not have mounted yet;
-    // onCharState re-fires a scroll event once it's ready.
-    if (
-      !seqLocked && charState.phase === 'stage' &&
-      rect.top <= 0 && rect.bottom >= innerHeight
-    ) {
-      tryBreakout()
-    }
-
-    // Reverse: user scrolled back up out of the summary — drop him a rope.
-    // Locks scroll and tweens the page back to the stage while he's hauled
-    // up; only fires from a settled summary (never mid-flight).
-    if (
-      !seqLocked && charState.phase === 'summary' &&
-      !goingDown && rect.top > innerHeight * 0.45
-    ) {
-      lockScrollFor(RETURN_MS)
-      journeyRef.value?.returnToStage?.()
-      tweenScrollTo(window.scrollY + rect.top - innerHeight, RETURN_MS)
-    }
-
     const range = rect.height - innerHeight
     const p = range > 0 ? Math.min(1, Math.max(0, -rect.top / range)) : 0
     const q = Math.min(1, Math.max(0, (p - PUSH_START) / (1 - PUSH_START)))
@@ -716,22 +615,15 @@ function setupSummaryStage(): (() => void) | null {
     const wantPush = q > 0.01
     if (wantPush !== pushOn) {
       pushOn = wantPush
-      journeyRef.value?.setPushing?.(pushOn)
+      summaryCharRef.value?.setPushing?.(pushOn)
     }
-  }
-  function tryBreakout(): boolean {
-    const jc = journeyRef.value
-    if (!jc?.breakout || !summarySlotRef.value) return false
-    jc.breakout(summarySlotRef.value)
-    return true
   }
   function onScroll() { if (!raf) raf = requestAnimationFrame(update) }
 
-  // Non-staged fallback (mobile / reduced motion): SummaryCharacter handles
-  // itself — just fire its entrance jump once it scrolls into view.
+  // Entrance: fire his jump-in once the section scrolls into view.
   const io = new IntersectionObserver((entries) => {
     if (entries.some((e) => e.isIntersecting)) {
-      if (!sumStaged.value && !mqMotion.matches) summaryCharRef.value?.enter?.()
+      if (!mqMotion.matches) summaryCharRef.value?.enter?.()
       io.disconnect()
     }
   }, { threshold: 0.35 })
@@ -748,34 +640,19 @@ function setupSummaryStage(): (() => void) | null {
       removeEventListener('scroll', onScroll)
       sec!.style.setProperty('--sum-appr', '0')
       sec!.style.setProperty('--sum-exit', '0')
-      pushOn = false
-      if (charState.phase !== 'stage') journeyRef.value?.returnToStage?.()
+      if (pushOn) {
+        pushOn = false
+        summaryCharRef.value?.setPushing?.(false)
+      }
     }
   }
   mqMotion.addEventListener?.('change', apply)
   addEventListener('resize', apply, { passive: true })
-  // Hard lock during journey sequences (passive:false so preventDefault
-  // works); outside a sequence, real input just cancels any leftover tween.
-  addEventListener('wheel', blockScrollEv, { passive: false })
-  addEventListener('touchmove', blockScrollEv, { passive: false })
-  addEventListener('keydown', blockScrollKeys)
-  addEventListener('wheel', cancelTweenOnInput, { passive: true })
-  addEventListener('touchstart', cancelTweenOnInput, { passive: true })
-  addEventListener('keydown', cancelTweenOnInput)
   apply()
   return () => {
     mqMotion.removeEventListener?.('change', apply)
     removeEventListener('resize', apply)
     removeEventListener('scroll', onScroll)
-    removeEventListener('wheel', blockScrollEv)
-    removeEventListener('touchmove', blockScrollEv)
-    removeEventListener('keydown', blockScrollKeys)
-    removeEventListener('wheel', cancelTweenOnInput)
-    removeEventListener('touchstart', cancelTweenOnInput)
-    removeEventListener('keydown', cancelTweenOnInput)
-    clearTimeout(seqUnlockTimer)
-    seqLocked = false
-    cancelScrollTween()
     io.disconnect()
     if (raf) cancelAnimationFrame(raf)
   }
@@ -1006,13 +883,11 @@ onBeforeUnmount(() => {
                is occluded by .hs-front, so beams/character skip GPU work
                until their first potentially-visible pixel. -->
           <BeamsBackground class="cr-beams" intensity="subtle" :paused="doorProgressRef < 0.001" />
-          <JourneyCharacter
+          <HeroCharacter
             v-if="characterVisible || characterDoorRef"
-            ref="journeyRef"
             class="cr-character"
             :camera-zoom="1.25"
             :paused="doorProgressRef < 0.001"
-            @state="onCharState"
           />
           <div v-else class="cr-character-placeholder" aria-hidden="true"></div>
           <div class="cr-overlay">
@@ -1022,16 +897,7 @@ onBeforeUnmount(() => {
               <h2 class="cr-headline">A <em>moving</em><br />operator — not a still one.</h2>
               <div class="cr-meta-stack">
                 <p class="cr-hint"><span class="cr-hint-dot" aria-hidden="true"></span>Move your cursor — he follows</p>
-                <button
-                  v-if="sumStaged"
-                  type="button"
-                  class="cr-cta"
-                  :disabled="!charState.ready || charState.phase !== 'stage'"
-                  @click="sendHimDown"
-                >
-                  Send him down<span class="cr-cta-arrow" aria-hidden="true">↓</span>
-                </button>
-                <p v-else class="cr-meta">Scroll to enter the work →</p>
+                <p class="cr-meta">Scroll to enter the work →</p>
               </div>
             </div>
           </div>
@@ -1174,18 +1040,17 @@ onBeforeUnmount(() => {
         </p>
       </div>
       <div class="summary-char" data-no-reveal>
-        <!-- Staged: an empty slot the flying character lands on (the canvas
-             is the fixed overlay from JourneyCharacter — it projects him
-             onto this rect every frame, so CSS transforms drag him along).
-             Non-staged (mobile / reduced motion): self-contained fallback. -->
-        <div ref="summarySlotRef" class="char-slot">
-          <div class="char-shadow" aria-hidden="true"></div>
-          <SummaryCharacter v-if="!sumStaged" ref="summaryCharRef" />
+        <!-- Self-contained interactive character (own canvas). Staged
+             (desktop): icon buttons below drive his one-shot clips; the
+             component hides its internal text buttons. Non-staged (mobile /
+             reduced motion): the component shows its own buttons. -->
+        <div class="char-slot">
+          <SummaryCharacter ref="summaryCharRef" :show-actions="!sumStaged" @state="onCharState" />
         </div>
         <div
           v-if="sumStaged"
           class="summary-actions"
-          :class="{ 'is-live': charState.ready && charState.phase === 'summary' }"
+          :class="{ 'is-live': charState.ready }"
           aria-label="Character actions"
         >
           <button type="button" class="sum-act" :disabled="charState.busy || charState.pushing" @click="playCharAction('jump')">
@@ -2241,47 +2106,8 @@ main > section.section {
   0%, 100% { transform: scale(0.8); }
   50% { transform: scale(1.15); }
 }
-/* Breakout CTA — the invitation to send the character down to the summary.
-   .cr-overlay is pointer-events:none, so the button re-enables itself. */
-.hs-sticky .cr-cta {
-  pointer-events: auto;
-  appearance: none;
-  border: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6em;
-  background: var(--accent);
-  color: var(--accent-ink, #10130A);
-  font: 700 0.68rem/1 var(--f-mono);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  padding: 0.85em 1.35em;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  box-shadow: 0 0 0 0 rgba(219, 254, 82, 0);
-}
-.hs-sticky .cr-cta:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 28px rgba(219, 254, 82, 0.35);
-}
-.hs-sticky .cr-cta:active { transform: translateY(0); }
-.hs-sticky .cr-cta:disabled {
-  opacity: 0.45;
-  cursor: default;
-  transform: none;
-  box-shadow: none;
-}
-.hs-sticky .cr-cta-arrow {
-  display: inline-block;
-  animation: cr-cta-arrow 1.5s ease-in-out infinite;
-}
-@keyframes cr-cta-arrow {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(3px); }
-}
 @media (prefers-reduced-motion: reduce) {
-  .hs-sticky .cr-hint, .hs-sticky .cr-hint-dot, .hs-sticky .cr-cta-arrow { animation: none; }
+  .hs-sticky .cr-hint, .hs-sticky .cr-hint-dot { animation: none; }
 }
 
 /* ────────────────────────────────────────────────────────────
@@ -2508,7 +2334,7 @@ main > section.section {
   position: sticky;
   top: var(--topbar-h, 56px);
   height: calc(100vh - var(--topbar-h, 56px));
-  padding: clamp(1.5rem, 4vh, 2.75rem) var(--gutter-x) clamp(1rem, 3vh, 2rem);
+  padding: clamp(0.75rem, 2vh, 1.5rem) var(--gutter-x) clamp(0.5rem, 1.5vh, 1rem);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -2528,36 +2354,16 @@ main > section.section {
    worse — clips it top AND bottom on short ones (centered overflow inside
    the pin's overflow:hidden). */
 #summary.sum-staged .summary-grid { align-items: start; }
-#summary.sum-staged .body { padding-top: clamp(0.25rem, 2.5vh, 1.5rem); }
-/* Short viewports: the pin can't grow, so the type compresses to keep the
-   whole summary inside it — otherwise overflow:hidden beheads the title
-   and swallows the last paragraph. */
-@media (max-height: 880px) {
-  #summary.sum-staged .section-title {
-    font-size: clamp(2rem, 4.6vw, 3.4rem);
-    margin-bottom: clamp(1rem, 2.6vh, 1.8rem);
-  }
-  #summary.sum-staged .section-num { margin-bottom: 0.55rem; }
-  #summary.sum-staged .body p {
-    font-size: 0.98rem;
-    line-height: 1.52;
-    margin-bottom: 0.9rem;
-  }
-}
-@media (max-height: 750px) {
-  #summary.sum-staged .section-title { font-size: 1.9rem; margin-bottom: 0.8rem; }
-  #summary.sum-staged .body p {
-    font-size: 0.89rem;
-    line-height: 1.45;
-    margin-bottom: 0.7rem;
-  }
-}
+#summary.sum-staged .body { padding-top: 0; }
+/* The pin can't grow, so trim the title's air (not its size — the type
+   must read identical to the flowing layout) to fit all four paragraphs. */
+#summary.sum-staged .section-title { margin-bottom: clamp(1rem, 2.4vh, 1.6rem); }
 #summary .body p {
-  font: 400 clamp(1rem, 1.25vw, 1.14rem)/1.62 var(--f-sans);
+  font: 400 clamp(1.05rem, 1.3vw, 1.18rem)/1.65 var(--f-sans);
   color: var(--ink);
   max-width: 60ch;
   text-wrap: pretty;
-  margin-bottom: 1.15rem;
+  margin-bottom: 1.25rem;
 }
 #summary .body p strong { color: var(--ink); font-weight: 600; }
 #summary .body p em { font-style: normal; background: var(--accent); color: var(--accent-ink); padding: 0 0.16em; }
@@ -2575,23 +2381,6 @@ main > section.section {
 #summary.sum-staged .summary-char {
   height: calc(100vh - var(--topbar-h, 56px) - clamp(3rem, 8vh, 5.5rem));
   min-height: 0;
-}
-/* Grounding shadow under the landed character. --char-lift (0 grounded →
-   1 airborne) is written by JourneyCharacter every frame: it thins and
-   fades while he's in the air (flight arc, jump clips) and blooms on
-   landing. Default 1 = hidden until he has actually arrived. */
-#summary .char-shadow {
-  position: absolute;
-  left: 50%;
-  bottom: 3.5%;
-  width: 46%;
-  height: clamp(10px, 2.6vh, 20px);
-  transform: translateX(-50%) scaleX(calc(1 - var(--char-lift, 1) * 0.45));
-  background: radial-gradient(ellipse at center, rgba(10, 12, 6, 0.3) 0%, rgba(10, 12, 6, 0) 68%);
-  /* Fades with the push-out too, so no shadow smear lingers on the empty
-     pin after he has shoved everything off the left edge. */
-  opacity: calc((1 - var(--char-lift, 1)) * 0.9 * (1 - var(--sum-exit, 0)));
-  pointer-events: none;
 }
 /* Push-out — contact-locked, scrubbed, no transitions.
    Phase 1 (--sum-appr 0→1): he walks from his slot to the text block.

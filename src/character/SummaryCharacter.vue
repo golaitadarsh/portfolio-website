@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref, watchEffect } from "vue";
 import * as THREE from "three";
 import { GLTFLoader } from "three-stdlib";
 import setCharacter from "./character";
@@ -26,10 +26,15 @@ import "./CharacterModel.css";
 
 interface Props {
   paused?: boolean;
+  /** Hide the built-in text buttons when the parent renders its own. */
+  showActions?: boolean;
 }
-const props = withDefaults(defineProps<Props>(), { paused: false });
+const props = withDefaults(defineProps<Props>(), { paused: false, showActions: true });
 
-const emit = defineEmits<{ (e: "loaded"): void }>();
+const emit = defineEmits<{
+  (e: "loaded"): void;
+  (e: "state", s: { ready: boolean; busy: boolean; pushing: boolean }): void;
+}>();
 
 const canvasDiv = ref<HTMLDivElement | null>(null);
 const ready = ref(false);
@@ -50,9 +55,16 @@ let cleanup: (() => void) | null = null;
 // Exposed API — assigned inside onMounted once the scene exists.
 let enterImpl: () => void = () => {};
 let setPushingImpl: (on: boolean) => void = () => {};
+let playActionImpl: (name: string) => void = () => {};
 defineExpose({
   enter: () => enterImpl(),
   setPushing: (on: boolean) => setPushingImpl(on),
+  playAction: (name: string) => playActionImpl(name),
+});
+
+// Mirror live state to the parent (drives its external action buttons).
+watchEffect(() => {
+  emit("state", { ready: ready.value, busy: busy.value, pushing: pushing.value });
 });
 
 function stripTracks(clip: THREE.AnimationClip, boneNames: string[]) {
@@ -185,6 +197,18 @@ onMounted(() => {
     crossfadeTo(action, 0.3);
   }
 
+  // The push loop only advances while the user actually scrolls: the page
+  // travel is scroll-scrubbed, so a frozen page with pumping legs reads
+  // broken. animate() lerps the action's timeScale toward 1 while scroll
+  // events are fresh and toward 0 once they stop — he leans into the text,
+  // mid-stride, waiting for the next wheel notch.
+  let pushAction: THREE.AnimationAction | null = null;
+  let lastScrollTs = 0;
+  const onScrollTick = () => {
+    lastScrollTs = performance.now();
+  };
+  window.addEventListener("scroll", onScrollTick, { passive: true });
+
   setPushingImpl = async (on: boolean) => {
     if (!mixer || pushing.value === on) return;
     pushing.value = on;
@@ -197,8 +221,13 @@ onMounted(() => {
       busy.value = false;
       const action = mixer.clipAction(clip);
       action.setLoop(THREE.LoopRepeat, Infinity);
+      action.timeScale = 1;
+      lastScrollTs = performance.now();
+      pushAction = action;
       crossfadeTo(action, 0.3);
     } else {
+      if (pushAction) pushAction.timeScale = 1;
+      pushAction = null;
       backToIdle(0.4);
     }
   };
@@ -314,6 +343,16 @@ onMounted(() => {
   const animate = () => {
     rafId = requestAnimationFrame(animate);
     const delta = clock.getDelta();
+    if (pushing.value && pushAction) {
+      // Fresh scroll events → play; idle → freeze. Crossfade weights ride
+      // mixer time, not action time, so a frozen clip still fades in clean.
+      const active = performance.now() - lastScrollTs < 180;
+      pushAction.timeScale = THREE.MathUtils.lerp(
+        pushAction.timeScale,
+        active ? 1 : 0,
+        active ? 0.3 : 0.16
+      );
+    }
     if (mixer) mixer.update(delta);
     if (charRoot && Math.abs(charRoot.rotation.y - targetYaw) > 0.001) {
       charRoot.rotation.y = THREE.MathUtils.lerp(charRoot.rotation.y, targetYaw, 0.08);
@@ -332,6 +371,7 @@ onMounted(() => {
     visObs.disconnect();
     document.removeEventListener("mousemove", onMouseMove);
     window.removeEventListener("resize", onResize);
+    window.removeEventListener("scroll", onScrollTick);
     disposeCharacter();
     light.dispose();
     scene.traverse((obj) => {
@@ -357,6 +397,7 @@ onMounted(() => {
     void playOnce(name);
   }
   actionHandler = onActionClick;
+  playActionImpl = (name: string) => void playOnce(name as ClipName);
 });
 
 let actionHandler: (name: ClipName) => void = () => {};
@@ -369,7 +410,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="sc-wrap" :class="{ 'is-pushing': pushing }">
     <div class="sc-stage character-model" ref="canvasDiv"></div>
-    <div class="sc-actions" v-show="ready" aria-label="Character actions">
+    <div class="sc-actions" v-show="ready && props.showActions" aria-label="Character actions">
       <span class="sc-actions-hint">Make him move —</span>
       <button
         v-for="a in ACTIONS"
