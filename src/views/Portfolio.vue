@@ -2166,7 +2166,9 @@ main > section.section {
   font: 600 0.68rem/1.5 var(--f-mono);
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: var(--accent);
+  /* Warm white, not accent: the CTA below is the corner's one accent
+     element — the hint informs, the button invites. Dot stays accent. */
+  color: rgba(242, 243, 236, 0.78);
   animation: cr-hint-pulse 2.4s ease-in-out infinite;
 }
 .hs-sticky .cr-hint-dot {
@@ -2555,11 +2557,15 @@ main > section.section {
   width: 46px;
   height: 46px;
   border-radius: 50%;
-  border: 1px solid var(--rule);
+  /* A hair darker than --rule: 1px hairlines on white read as decoration,
+     not buttons. These must pass the obviously-clickable test at a glance. */
+  border: 1px solid rgba(16, 19, 10, 0.28);
+  background: #fff;
   display: grid;
   place-items: center;
   transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease,
-    transform 0.2s ease;
+    transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 1px 2px rgba(16, 19, 10, 0.07);
 }
 .sum-act-btn svg {
   width: 19px;
