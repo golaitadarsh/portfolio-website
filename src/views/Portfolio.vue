@@ -583,10 +583,15 @@ const sumStaged = ref(false)
 // Live character state, emitted by JourneyCharacter — drives button states.
 const charState = reactive({ ready: false, busy: false, phase: 'stage', pushing: false })
 function onCharState(s: { ready: boolean; busy: boolean; phase: string; pushing: boolean }) {
+  const becameReady = s.ready && !charState.ready
   charState.ready = s.ready
   charState.busy = s.busy
   charState.phase = s.phase
   charState.pushing = s.pushing
+  // The async component can mount AFTER the user has already jumped into
+  // the summary pin (hard refresh at #summary, instant anchor scroll): the
+  // scroll handler found no ref to call. Re-run it now that he exists.
+  if (becameReady) requestAnimationFrame(() => dispatchEvent(new Event('scroll')))
 }
 function playCharAction(name: string) {
   journeyRef.value?.playAction?.(name)
@@ -649,18 +654,21 @@ function setupSummaryStage(): (() => void) | null {
     // Breakout: runway released, summary sliding in — fly the character out
     // of the stage and glide the page so the landing is framed. The tween
     // duration matches the flight so both settle together.
+    // tryBreakout, not a blind latch: the async component may not have
+    // mounted yet (hard refresh straight into the pin) — a failed attempt
+    // must stay retryable for the ready-retrigger in onCharState.
     if (!brokeOut && goingDown && rect.top > 0 && rect.top < innerHeight * 0.92) {
-      brokeOut = true
-      journeyRef.value?.breakout?.(summarySlotRef.value)
-      tweenScrollTo(window.scrollY + rect.top, 1400)
+      if (tryBreakout()) {
+        brokeOut = true
+        tweenScrollTo(window.scrollY + rect.top, 1400)
+      }
     }
 
     // Entered the pin without the flight (anchor jump past the summary,
     // then scrolled back into it) — he still has to show up, flying in
     // from wherever the stage is (off-screen above).
     if (!brokeOut && rect.top <= 0 && rect.bottom >= innerHeight) {
-      brokeOut = true
-      journeyRef.value?.breakout?.(summarySlotRef.value)
+      if (tryBreakout()) brokeOut = true
     }
 
     // Reverse: user scrolled back up toward the stage — fly him home.
@@ -683,6 +691,12 @@ function setupSummaryStage(): (() => void) | null {
       pushOn = wantPush
       journeyRef.value?.setPushing?.(pushOn)
     }
+  }
+  function tryBreakout(): boolean {
+    const jc = journeyRef.value
+    if (!jc?.breakout || !summarySlotRef.value) return false
+    jc.breakout(summarySlotRef.value)
+    return true
   }
   function onScroll() { if (!raf) raf = requestAnimationFrame(update) }
 
@@ -2463,6 +2477,35 @@ main > section.section {
 /* minmax(0,1fr), not bare 1fr: a 1fr track's min is auto, so wide children
    blow the track past the viewport on phones. minmax(0,1fr) compresses. */
 @media (max-width: 980px) { #summary .summary-grid { grid-template-columns: minmax(0, 1fr); } }
+/* Staged pin: TOP-align the text column, same rhythm as every other
+   section. Centering it floats the title mid-air on tall screens and —
+   worse — clips it top AND bottom on short ones (centered overflow inside
+   the pin's overflow:hidden). */
+#summary.sum-staged .summary-grid { align-items: start; }
+#summary.sum-staged .body { padding-top: clamp(0.25rem, 2.5vh, 1.5rem); }
+/* Short viewports: the pin can't grow, so the type compresses to keep the
+   whole summary inside it — otherwise overflow:hidden beheads the title
+   and swallows the last paragraph. */
+@media (max-height: 880px) {
+  #summary.sum-staged .section-title {
+    font-size: clamp(2rem, 4.6vw, 3.4rem);
+    margin-bottom: clamp(1rem, 2.6vh, 1.8rem);
+  }
+  #summary.sum-staged .section-num { margin-bottom: 0.55rem; }
+  #summary.sum-staged .body p {
+    font-size: 0.98rem;
+    line-height: 1.52;
+    margin-bottom: 0.9rem;
+  }
+}
+@media (max-height: 750px) {
+  #summary.sum-staged .section-title { font-size: 1.9rem; margin-bottom: 0.8rem; }
+  #summary.sum-staged .body p {
+    font-size: 0.89rem;
+    line-height: 1.45;
+    margin-bottom: 0.7rem;
+  }
+}
 #summary .body p {
   font: 400 clamp(1rem, 1.25vw, 1.14rem)/1.62 var(--f-sans);
   color: var(--ink);

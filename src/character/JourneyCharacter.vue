@@ -109,6 +109,7 @@ function lockRootXZ(clip: THREE.AnimationClip) {
 
 const easeInOutCubic = (t: number) =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
 onMounted(() => {
   const container = canvasDiv.value;
@@ -315,23 +316,75 @@ onMounted(() => {
   }
 
   // ── flight ─────────────────────────────────────────────────────────
+  // The stage frames him passport-close: his full-body bbox projects ~3
+  // viewports tall. Lerping that straight to the small summary slot shrinks
+  // him 4-5× mid-air over the white page — reads as a broken zoom, not a
+  // jump. So the flight has two beats:
+  //   recede · he steps BACK into the doorway (a real 3D depth move — the
+  //            solver pushes him away from the camera) until he's full-body
+  //            at roughly slot size, while the dark stage still fills the
+  //            screen. Matches the jump clip's crouch anticipation.
+  //   leap   · near-constant-size arc from the doorway down to the slot.
+  // The reverse flight mirrors it: arc up to the doorway, then step forward
+  // into the close-up as the stage scrolls back in.
   let flight: {
     t: number;
     dur: number;
     start: { x: number; y: number; w: number; h: number };
     back: boolean;
+    fromStage: boolean;
   } | null = null;
-  const FLIGHT_DUR = 1.45;
-  const BACK_DUR = 0.95;
+  const FLIGHT_DUR = 1.7;
+  const BACK_DUR = 1.2;
+  const RECEDE = 0.34; // forward: share of flight spent receding on stage
+  const BACK_GROW = 0.62; // reverse: share spent arcing before the step-in
+
+  /** Full-body rect standing in the doorway — recede target / leap origin.
+   *  Anchored to the live stage rect so it scrolls with the page. */
+  function launchRect() {
+    const st = stageScreenRect();
+    const vh = window.innerHeight;
+    const slotH = slotEl ? slotEl.getBoundingClientRect().height : vh * 0.6;
+    const h = Math.min(vh * 0.66, slotH * 1.1);
+    const w = h * (st.w / Math.max(1, st.h));
+    // Head stays put (top anchored): shrinking downward from the head reads
+    // as stepping back, not deflating.
+    return { x: st.x + st.w / 2 - w / 2, y: st.y, w, h };
+  }
+
+  /** Piecewise flight path — rect plus arc share (0..1) at time fraction t. */
+  function flightFrame(
+    f: NonNullable<typeof flight>,
+    tNow: number
+  ): { r: { x: number; y: number; w: number; h: number }; arc: number } {
+    if (!f.back) {
+      if (tNow < RECEDE) {
+        const e = easeOutCubic(tNow / RECEDE);
+        // Stage-origin flights track the live stage rect so he stays glued
+        // to the (scrolling) doorway while receding; converted mid-air
+        // flights recede from wherever they were.
+        const from = f.fromStage ? stageScreenRect() : f.start;
+        return { r: lerpRect(from, launchRect(), e), arc: 0 };
+      }
+      const e = easeInOutCubic((tNow - RECEDE) / (1 - RECEDE));
+      return { r: lerpRect(launchRect(), liveSlotRect(), e), arc: Math.sin(Math.PI * e) };
+    }
+    if (tNow < BACK_GROW) {
+      const e = easeInOutCubic(tNow / BACK_GROW);
+      return { r: lerpRect(f.start, launchRect(), e), arc: Math.sin(Math.PI * e) };
+    }
+    const e = easeInOutCubic((tNow - BACK_GROW) / (1 - BACK_GROW));
+    return { r: lerpRect(launchRect(), stageScreenRect(), e), arc: 0 };
+  }
 
   let pendingBreakout: HTMLElement | null = null;
   breakoutImpl = (el: HTMLElement) => {
     if (phase === "flight-back" && flight) {
       // Direction change mid-return — turn around from where he is.
       slotEl = el;
-      const from = lerpRect(flight.start, stageScreenRect(), easeInOutCubic(flight.t));
+      const from = flightFrame(flight, flight.t).r;
       phase = "flight";
-      flight = { t: 0, dur: FLIGHT_DUR, start: from, back: false };
+      flight = { t: 0, dur: FLIGHT_DUR, start: from, back: false, fromStage: false };
       targetYaw = IDLE_YAW;
       busy = false;
       void playOnce("jump", 0.22);
@@ -347,8 +400,21 @@ onMounted(() => {
     slotEl = el;
     const start = projectCurrentRect();
     if (!start) return;
+    // Re-capture the stage UV rect NOW, while he verifiably sits on stage.
+    // The load-time capture can race the hero driver's layout pass and
+    // measure a collapsed canvas — a garbage UV silently throws every
+    // stage-anchored flight rect thousands of pixels off screen.
+    const c0 = renderer.domElement.getBoundingClientRect();
+    if (c0.width > 2 && c0.height > 2) {
+      stageRectUV = {
+        x: (start.x - c0.left) / c0.width,
+        y: (start.y - c0.top) / c0.height,
+        w: start.w / c0.width,
+        h: start.h / c0.height,
+      };
+    }
     phase = "flight";
-    flight = { t: 0, dur: FLIGHT_DUR, start, back: false };
+    flight = { t: 0, dur: FLIGHT_DUR, start, back: false, fromStage: true };
     teleported.value = true;
     targetYaw = IDLE_YAW;
     void nextTick(() => resizeToBox());
@@ -366,10 +432,10 @@ onMounted(() => {
     }
     const start =
       phase === "flight" && flight
-        ? lerpRect(flight.start, liveSlotRect(), easeInOutCubic(flight.t))
+        ? flightFrame(flight, flight.t).r
         : liveSlotRect();
     phase = "flight-back";
-    flight = { t: 0, dur: BACK_DUR, start, back: true };
+    flight = { t: 0, dur: BACK_DUR, start, back: true, fromStage: false };
     setPushingImpl(false);
     targetYaw = stageYaw;
     busy = false;
@@ -528,6 +594,19 @@ onMounted(() => {
     }
 
     introTimer = window.setTimeout(() => light.turnOnLights(), props.introDelayMs);
+    if (import.meta.env.DEV) {
+      (window as any).__jc = {
+        rects: () => ({
+          stageRectUV,
+          stage: stageScreenRect(),
+          launch: launchRect(),
+          projected: projectCurrentRect(),
+          host: host!.getBoundingClientRect(),
+          phase,
+          flightT: flight?.t ?? null,
+        }),
+      };
+    }
     ready = true;
     emit("loaded");
     emitState();
@@ -580,13 +659,15 @@ onMounted(() => {
 
     if ((phase === "flight" || phase === "flight-back") && flight && slotEl) {
       flight.t = Math.min(1, flight.t + delta / flight.dur);
-      const e = easeInOutCubic(flight.t);
-      const target = flight.back ? stageScreenRect() : liveSlotRect();
-      const r = lerpRect(flight.start, target, e);
-      const arc = Math.sin(Math.PI * e) * window.innerHeight * 0.14;
-      placeForRect(r, arc);
-      // Slot shadow: blooms late on approach, fades out fast on departure.
-      lift = flight.back ? Math.min(1, e * 2) : 1 - e * e * e;
+      const { r, arc } = flightFrame(flight, flight.t);
+      placeForRect(r, arc * window.innerHeight * 0.16);
+      // Slot shadow: blooms late on the leap's approach, gone the moment
+      // the return flight lifts off. leapE = progress through the airborne
+      // segment (recede / step-in beats keep the shadow hidden).
+      const leapE = flight.back
+        ? Math.min(1, flight.t / BACK_GROW)
+        : Math.max(0, (flight.t - RECEDE) / (1 - RECEDE));
+      lift = flight.back ? Math.min(1, leapE * 2) : 1 - Math.pow(easeInOutCubic(leapE), 3);
       if (flight.t >= 1) {
         if (flight.back) {
           snapToStage();
