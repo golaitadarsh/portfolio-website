@@ -1,404 +1,514 @@
 <script lang="ts" setup>
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import DetailLayout from '../layouts/DetailLayout.vue'
+import PorPhotoWall from '../components/portfolio/PorPhotoWall.vue'
+import type { WallPhoto } from '../components/portfolio/PorPhotoWall.vue'
+
+import convocationImg from '../../assets/por/01-convocation-2022.jpg'
+import tenderVisitImg from '../../assets/por/03-tender-visit-mess.jpg'
+import amritMahotsavImg from '../../assets/por/10-azadi-amrit-mahotsav.jpg'
+import outletLaunchImg from '../../assets/por/04-bringing-food-vendors.jpg'
+import garbaNightImg from '../../assets/por/11-campus-events-garba.jpg'
+import smartLaundryImg from '../../assets/por/06-smart-laundry.jpg'
+import treePlantationImg from '../../assets/por/14-tree-plantation-drive.jpg'
+import promNightImg from '../../assets/por/12-organised-prom.jpg'
+import runYourCafeImg from '../../assets/por/13-run-your-own-cafe.jpg'
+
+const WALL_PHOTOS: WallPhoto[] = [
+  { src: convocationImg, cap: 'Convocation 2022' },
+  { src: tenderVisitImg, cap: 'Mess Tender Visit' },
+  { src: amritMahotsavImg, cap: 'Amrit Mahotsav' },
+  { src: outletLaunchImg, cap: 'Outlet Launch' },
+  { src: garbaNightImg, cap: 'Garba Night' },
+  { src: smartLaundryImg, cap: 'Smart Laundry' },
+  { src: treePlantationImg, cap: 'Tree Plantation Drive' },
+  { src: promNightImg, cap: 'Prom Night' },
+  { src: runYourCafeImg, cap: 'Run Your Own Café' },
+]
+
+const rootEl = ref<HTMLElement | null>(null)
+const railWrap = ref<HTMLElement | null>(null)
+const railTip = ref<HTMLElement | null>(null)
+
+let motionOK = false
+let alive = true
+let raf: number | null = null
+let revealIO: IntersectionObserver | null = null
+let railIO: IntersectionObserver | null = null
+
+/* ── count-up: parses prefix / number / suffix from the text
+   (₹80+ lakh, 3,600+, 58K all work); restores exact original at end ── */
+function runCounters(scope: HTMLElement) {
+  scope.querySelectorAll<HTMLElement>('.cnt').forEach((el) => {
+    if (el.dataset.done) return
+    el.dataset.done = '1'
+    const orig = el.dataset.orig || (el.dataset.orig = el.textContent || '')
+    if (!motionOK) {
+      el.textContent = orig
+      return
+    }
+    const m = orig.match(/^([^0-9]*)([\d,]+)(.*)$/s)
+    if (!m) return
+    const target = parseInt(m[2].replace(/,/g, ''), 10)
+    const commas = m[2].includes(',')
+    const t0 = performance.now()
+    const dur = 850
+    const tick = (t: number) => {
+      if (!alive) return
+      const p = Math.min(1, (t - t0) / dur)
+      const e = 1 - Math.pow(1 - p, 3)
+      if (p < 1) {
+        const n = Math.round(target * e)
+        el.textContent = m[1] + (commas ? n.toLocaleString('en-US') : String(n)) + m[3]
+        requestAnimationFrame(tick)
+      } else {
+        el.textContent = orig
+      }
+    }
+    requestAnimationFrame(tick)
+  })
+}
+
+/* ── rewind counters so they replay on next reveal ── */
+function resetCounters(scope: HTMLElement) {
+  scope.querySelectorAll<HTMLElement>('.cnt').forEach((el) => {
+    delete el.dataset.done
+    if (el.dataset.orig) el.textContent = el.dataset.orig
+  })
+}
+
+onMounted(() => {
+  const root = rootEl.value
+  const wrap = railWrap.value
+  const tip = railTip.value
+  if (!root || !wrap || !tip) return
+
+  motionOK = matchMedia('(prefers-reduced-motion: no-preference)').matches
+  if (motionOK) root.classList.add('anim')
+
+  /* section titles + year clusters reveal; rewind when they exit below */
+  revealIO = new IntersectionObserver(
+    (es) => {
+      es.forEach((en) => {
+        if (en.isIntersecting) en.target.classList.add('on')
+        else if (en.boundingClientRect.top > 0) en.target.classList.remove('on')
+      })
+    },
+    { threshold: 0.15, rootMargin: '0px 0px -6% 0px' },
+  )
+  root.querySelectorAll('.section-title, .yr-group').forEach((el) => revealIO!.observe(el))
+
+  /* scroll-scrubbed rail: fill tracks a playhead at 72% viewport height */
+  const entries = Array.from(wrap.querySelectorAll<HTMLElement>('.entry'))
+  const lis = Array.from(wrap.querySelectorAll<HTMLElement>('.bullets > li'))
+
+  const frame = () => {
+    const r = wrap.getBoundingClientRect()
+    const t = motionOK
+      ? Math.max(0, Math.min(r.height, window.innerHeight * 0.72 - r.top))
+      : r.height
+    tip.style.height = `${t}px`
+
+    entries.forEach((e) => {
+      e.classList.toggle('on', t >= e.getBoundingClientRect().top - r.top + 8)
+    })
+    lis.forEach((li) => {
+      const nd = li.querySelector('.nd')
+      const y = li.getBoundingClientRect().top - r.top + 12
+      if (t >= y) {
+        if (!li.classList.contains('on')) {
+          li.classList.add('on')
+          runCounters(li)
+        }
+        nd?.classList.add('lit')
+      } else {
+        if (li.classList.contains('on')) {
+          li.classList.remove('on')
+          resetCounters(li)
+        }
+        nd?.classList.remove('lit')
+      }
+    })
+  }
+  const loop = () => {
+    frame()
+    raf = requestAnimationFrame(loop)
+  }
+
+  /* run the rAF loop only while the rail is near the viewport */
+  railIO = new IntersectionObserver(
+    (es) => {
+      const en = es[es.length - 1]
+      if (en.isIntersecting) {
+        if (raf == null) raf = requestAnimationFrame(loop)
+      } else {
+        if (raf != null) {
+          cancelAnimationFrame(raf)
+          raf = null
+        }
+        frame() /* settle state once when leaving */
+      }
+    },
+    { rootMargin: '30% 0px 45% 0px' },
+  )
+  railIO.observe(wrap)
+})
+
+onBeforeUnmount(() => {
+  alive = false
+  if (raf != null) cancelAnimationFrame(raf)
+  raf = null
+  revealIO?.disconnect()
+  railIO?.disconnect()
+})
 </script>
 
 <template>
   <DetailLayout>
-    <section class="page-head">
-      <div class="meta">
-        <span><span class="num">04</span> / Positions of Responsibility</span>
-        <span>IIT Gandhinagar · 2019—2023</span>
-      </div>
-      <h1>The bridge<br />between<br /><span class="accent-line">2,000 students</span></h1>
-      <p class="lede">
-        Three concurrent council roles, a 25-member team, and a community of 2,000+ undergraduates. Replaced an unstructured vendor selection process with a trial-based system, ran convocation for the Class of 2022 with a 68-member execution team, and led a 104-student contingent for Inter-IIT Cultural Meet — all in a single year.
-      </p>
-    </section>
-
-    <section class="flagship">
-      <div class="flag-left">
-        <span class="kicker">04.A · Flagship · Sole bridge between students &amp; administration</span>
-        <div class="roles-stack">
-          <span class="r"><em>Welfare Secretary</em></span>
-          <span class="r">Interim General Secretary</span>
-          <span class="r">Interim Cultural Secretary</span>
+    <div ref="rootEl">
+      <section class="page-head">
+        <div class="meta">
+          <span><span class="num">04</span> / Positions of Responsibility</span>
+          <span>IIT Gandhinagar · 2019—2023</span>
         </div>
-        <div class="org">
-          <span class="k">Organisation</span>
-          <span class="v">Student Council · IIT Gandhinagar</span>
-        </div>
-        <div class="org">
-          <span class="k">Tenure</span>
-          <span class="v">May 2022 — April 2023</span>
-        </div>
-        <p class="summary">
-          Held three concurrent council roles — the only council member to carry all three simultaneously. Ran day-to-day operations for 2,000+ UG/PG students across hostels, mess, laundry, health services, and commercial outlets. Coordinated a 25-member council as the sole bridge between the student community and institute administration. Designed and ran a trial-based vendor selection system from scratch, replacing an unstructured legacy approach that had no prior evaluation standard.
+        <h1>The bridge<br />between<br /><span class="accent-line">3,600 students</span></h1>
+        <p class="lede">
+          Three concurrent council roles, a 25-member team, and a community of 3,600+ students. Replaced an unstructured vendor selection process with a trial-based system, ran convocation for the Class of 2022 with a 68-member execution team, and led a 104-student contingent for Inter-IIT Cultural Meet — all in a single year.
         </p>
-      </div>
+      </section>
 
-      <div class="flag-right">
-        <div class="callout dark">
-          <span class="k">Community served</span>
-          <span class="v">2,000<small>+ UG/PG students</small></span>
-          <p class="desc">Across hostels, mess, laundry, health services, and commercial outlets — sole operational bridge to institute administration.</p>
-        </div>
-        <div class="callout-pair">
-          <div class="callout">
-            <span class="k">Vendor trials</span>
-            <span class="v">20<small>+</small></span>
-            <p class="desc">Live campus trials run; 6 new outlets onboarded on demonstrated performance, not lowest bid.</p>
-          </div>
-          <div class="callout">
-            <span class="k">Council</span>
-            <span class="v">25</span>
-            <p class="desc">Members coordinated across hostels, mess, health, outlets, welfare workstreams.</p>
-          </div>
-        </div>
-      </div>
-    </section>
+      <section id="por" class="section por-section">
+        <h2 class="section-title">Positions of<br /><span class="accent-line">Responsibility</span></h2>
 
-    <div class="interim-row">
-      <div class="interim">
-        <span class="num">01 · Welfare Secretary</span>
-        <h4>Vendor system rebuild</h4>
-        <p>Designed a trial-based vendor selection process from scratch. Ran 20+ vendor trials and onboarded 6 new commercial outlets on demonstrated performance + structured student feedback — replacing a process with no prior evaluation standard.</p>
-      </div>
-      <div class="interim">
-        <span class="num">02 · Interim Gen. Sec.</span>
-        <h4>Convocation Class of 2022</h4>
-        <p>Owned end-to-end Convocation operations with a 68-member execution team. Responsible for full live-day coordination and real-time issue resolution across all workstreams — programme, hospitality, logistics, AV, guest management.</p>
-      </div>
-      <div class="interim">
-        <span class="num">03 · Interim Cult. Sec.</span>
-        <h4>Inter-IIT Cultural Meet</h4>
-        <p>Led a 104-student contingent for the Inter-IIT Cultural Meet. Managed logistics, team coordination, participation scheduling, and on-ground safety across the full event from departure to return.</p>
-      </div>
+        <div class="rail-wrap" ref="railWrap">
+          <div class="rail" aria-hidden="true"><div class="rail-tip" ref="railTip"></div></div>
+
+          <article class="entry">
+            <span class="bix"><i></i>Student Council, IIT Gandhinagar</span>
+            <div class="entry-head">
+              <p class="entry-title">Welfare Secretary | Interim General Secretary | Interim Cultural Secretary</p>
+              <span class="entry-when">May, 2022 — April, 2023</span>
+            </div>
+
+            <div class="split">
+              <ul class="bullets">
+                <li><span class="nd"></span><span class="tx">Represented a <strong><span class="cnt">3,600+</span> student community</strong> on institute decisions spanning food services, laundry, healthcare, commercial establishments, hostels and student affairs — coordinating with administration, external vendors, and a <span class="cnt">25</span>-member council as the sole bridge between students and the institute.</span></li>
+                <li><span class="nd"></span><span class="tx">Student representative in <strong>procurement and tender evaluations</strong> for campus mess and laundry contracts — conducted operational due diligence across vendor facilities in Gujarat, Rajasthan and Delhi before contributing to institute-wide provider selection.</span></li>
+                <li><span class="nd"></span><span class="tx"><em>Designed a trial-based vendor selection system</em> via the Commercial Establishment &amp; Management Committee — engaged <span class="cnt">20+</span> national chains and regional players, ran live campus trials, and onboarded outlets on demonstrated performance rather than lowest-cost bids.</span></li>
+                <li><span class="nd"></span><span class="tx">Owned planning and governance of student initiatives with cumulative budgets exceeding <strong><span class="cnt">₹80+ lakh</span></strong> as a student signing authority; led Convocation 2022 through a <span class="cnt">68</span>-member team and IITGN's <span class="cnt">104</span>-member Inter-IIT Cultural Meet contingent end-to-end.</span></li>
+              </ul>
+
+              <div class="visual-rail">
+                <PorPhotoWall :photos="WALL_PHOTOS" label="Photo wall — Student Council, IIT Gandhinagar" />
+              </div>
+            </div>
+          </article>
+
+          <article class="entry">
+            <span class="bix"><i></i>Welfare Council, IIT Gandhinagar</span>
+            <div class="entry-head">
+              <p class="entry-title">Coordinator for Commercial Outlets</p>
+              <span class="entry-when">May, 2021 — April, 2022</span>
+            </div>
+
+            <ul class="bullets">
+              <li><span class="nd"></span><span class="tx">Identified and assessed <strong><span class="cnt">20+</span> vendor operators</strong> across food and service categories through independent on-ground outreach and capability assessments spanning national chains and regional operators.</span></li>
+              <li><span class="nd"></span><span class="tx">Designed and implemented a <em>data-driven vendor evaluation framework</em> — ran multiple 1–2 day campus trials and collected structured community feedback to replace ad-hoc vendor selection with an evidence-based process.</span></li>
+              <li><span class="nd"></span><span class="tx">Onboarded and launched <strong><span class="cnt">6</span> food and service outlets</strong> serving a <span class="cnt">3,600+</span> student community — managing end-to-end negotiations, approvals, scheduling, and operational go-live.</span></li>
+              <li><span class="nd"></span><span class="tx">Hosted an institute-wide ice cream social for <strong><span class="cnt">4,500+</span> students, faculty, staff and service personnel</strong> — from vendor selection and procurement to on-ground execution.</span></li>
+              <li><span class="nd"></span><span class="tx">Led multiple blood donation drives with GCRI and Ahmedabad Civil Hospital — coordinated <span class="cnt">400+</span> registrations via slot-based crowd management, the institute's highest post-pandemic collection.</span></li>
+            </ul>
+          </article>
+
+          <article class="entry">
+            <span class="bix"><i></i>Virtual Event during COVID-19</span>
+            <div class="entry-head">
+              <p class="entry-title">Co-Founder — Pegasus'20 (International Online Event)</p>
+              <span class="entry-when">September, 2020</span>
+            </div>
+
+            <ul class="bullets">
+              <li><span class="nd"></span><span class="tx">Co-founded and delivered Pegasus'20 end-to-end during COVID with a <span class="cnt">30</span>-member team; secured 5 sponsors + 3 gifting partners, managed INR <span class="cnt">58K</span> prize pool, and closed at INR <span class="cnt">52K</span> profit.</span></li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section id="extra" class="section">
+        <h2 class="section-title">Other<br /><span class="accent-line">Extra-Curricular</span></h2>
+
+        <div class="yrs">
+          <div class="yr-group">
+            <div class="yr-col">
+              <div class="yr" aria-label="2020"><span>2</span><span>0</span><span>2</span><span>0</span></div>
+            </div>
+            <div class="yr-roles">
+              <div class="yr-role"><p class="r">Events Coordinator <span class="o">— Amalthea '20 (Annual Technical Summit, IITGN)</span></p><span class="d">September, 2020 — May, 2021</span></div>
+              <div class="yr-role"><p class="r">Finance Coordinator, Events Team <span class="o">— Blithchron '21 (Annual Cultural Fest, IITGN)</span></p><span class="d">August, 2020 — February, 2021</span></div>
+            </div>
+          </div>
+
+          <div class="yr-group">
+            <div class="yr-col">
+              <div class="yr" aria-label="2019"><span>2</span><span>0</span><span>1</span><span>9</span></div>
+            </div>
+            <div class="yr-roles">
+              <div class="yr-role"><p class="r">Event Management Executive <span class="o">— Blithchron '20 (Annual Cultural Fest, IITGN)</span></p><span class="d">September, 2019 — February, 2020</span></div>
+              <div class="yr-role"><p class="r">Event Management Executive <span class="o">— Amalthea '19 (Annual Technical Summit, IITGN)</span></p><span class="d">August, 2019 — October, 2019</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
-
-    <article class="role-row">
-      <span class="ix">04.B</span>
-      <div class="body">
-        <p class="org-line">Welfare Council · IIT Gandhinagar</p>
-        <h3>Coordinator for Commercial Outlets</h3>
-        <p>
-          Built a vendor candidate pipeline of 20+ operators across food and service categories — conducted independent on-ground outreach and capability assessments across national chains and regional operators before any formal trial. Designed a competitive trial-and-selection system from scratch: ran simultaneous 1–2 day live campus trials in the same category, collected structured community feedback, and made selection decisions based on demonstrated performance. Organised multiple blood donation drives end-to-end with GCRI and Ahmedabad Civil Hospital — managed 400+ registrations with slot-based crowd control, the institute's highest post-pandemic yield.
-        </p>
-        <div class="impact-strip">
-          <div class="it"><span class="v">20+</span><span class="k">Vendors in pipeline</span></div>
-          <div class="it"><span class="v">6</span><span class="k">Outlets onboarded</span></div>
-          <div class="it"><span class="v">400+</span><span class="k">Blood drive registrations</span></div>
-          <div class="it"><span class="v">#1</span><span class="k">Post-pandemic yield</span></div>
-        </div>
-      </div>
-      <span class="when">May 2021<br />— Apr 2022</span>
-    </article>
-
-    <article class="role-row">
-      <span class="ix">04.C</span>
-      <div class="body">
-        <p class="org-line">Pegasus'20 · International Online Event</p>
-        <h3>Co-Founder — virtual event during COVID-19</h3>
-        <p>
-          Co-founded and delivered Pegasus'20 end-to-end during COVID with a 30-member team. Secured 5 sponsors plus 3 gifting partners; managed an INR 58K prize pool; closed at INR 52K profit. First-ever international online event organised from scratch during peak pandemic constraints.
-        </p>
-        <div class="impact-strip">
-          <div class="it"><span class="v">30</span><span class="k">Team members</span></div>
-          <div class="it"><span class="v">8</span><span class="k">Partners secured</span></div>
-          <div class="it"><span class="v">₹52K</span><span class="k">Profit closed</span></div>
-        </div>
-      </div>
-      <span class="when">September 2020</span>
-    </article>
-
-    <section class="log">
-      <h3>04.D · Other Extra-Curricular Roles</h3>
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 38%;">Role</th>
-            <th style="width: 42%;">Organisation</th>
-            <th style="width: 20%;">Period</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="role-cell">Events Coordinator</td>
-            <td class="org-cell">Amalthea '20 — Annual Technical Summit, IITGN</td>
-            <td class="date-cell">Sep 2020 — May 2021</td>
-          </tr>
-          <tr>
-            <td class="role-cell">Finance Coordinator, Events Team</td>
-            <td class="org-cell">Blithchron '21 — Annual Cultural Fest, IITGN</td>
-            <td class="date-cell">Aug 2020 — Feb 2021</td>
-          </tr>
-          <tr>
-            <td class="role-cell">Event Management Executive</td>
-            <td class="org-cell">Blithchron '20 — Annual Cultural Fest, IITGN</td>
-            <td class="date-cell">Sep 2019 — Feb 2020</td>
-          </tr>
-          <tr>
-            <td class="role-cell">Event Management Executive</td>
-            <td class="org-cell">Amalthea '19 — Annual Technical Summit, IITGN</td>
-            <td class="date-cell">Aug 2019 — Oct 2019</td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
   </DetailLayout>
 </template>
 
 <style scoped>
-.flagship {
-  padding: clamp(3rem, 6vh, 5rem) var(--gutter-x);
-  border-bottom: 1px solid var(--rule);
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-  gap: clamp(2rem, 5vw, 4rem);
-  align-items: start;
-}
-@media (max-width: 980px) { .flagship { grid-template-columns: 1fr; } }
+/* page-head already draws a bottom hairline */
+.por-section { border-top: 0; }
 
-.flag-left :deep(.kicker) { margin-bottom: 1rem; }
-.flag-left .roles-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1.5rem;
+/* ── rail ── */
+.rail-wrap {
+  position: relative;
+  --railpad: clamp(2.4rem, 4.5vw, 3.4rem);
+  padding-left: var(--railpad);
 }
-.flag-left .roles-stack .r {
-  font: 800 clamp(1.5rem, 3.2vw, 2.4rem)/1.05 var(--f-sans);
-  letter-spacing: -0.025em;
-  text-transform: uppercase;
+.rail {
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--ink-trace);
 }
-.flag-left .roles-stack .r:nth-child(2) { color: var(--ink-soft); }
-.flag-left .roles-stack .r:nth-child(3) { color: var(--ink-faint); }
-.flag-left .roles-stack .r em {
-  font-style: normal;
-  background: var(--accent);
-  padding: 0 0.1em;
-}
-.flag-left .org {
-  display: flex;
-  gap: 0.75rem;
-  align-items: baseline;
-  padding: 1rem 0;
-  border-top: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
-  margin-bottom: 1.25rem;
-}
-.flag-left .org .k {
-  font: 500 0.62rem/1 var(--f-mono);
-  letter-spacing: 0.18em;
-  color: var(--ink-faint);
-  text-transform: uppercase;
-  min-width: 6rem;
-}
-.flag-left .org .v {
-  font: 600 0.92rem/1.3 var(--f-sans);
-  letter-spacing: -0.005em;
-}
-.flag-left .summary {
-  font: 400 clamp(1rem, 1.2vw, 1.08rem)/1.6 var(--f-sans);
-  color: var(--ink-soft);
-  max-width: 56ch;
-  text-wrap: pretty;
-}
-
-.flag-right {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-.callout {
-  padding: clamp(1.25rem, 2.5vh, 1.75rem);
-  border: 1px solid var(--rule);
-  background: var(--paper);
-}
-.callout.dark { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-.callout .k {
-  font: 500 0.62rem/1 var(--f-mono);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  margin-bottom: 0.6rem;
-}
-.callout.dark .k { color: rgba(255,255,255,0.55); }
-.callout .v {
-  font: 900 clamp(2rem, 4vw, 2.8rem)/1 var(--f-sans);
-  letter-spacing: -0.04em;
-  margin-bottom: 0.5rem;
-}
-.callout .v small {
-  font-size: 0.4em;
-  vertical-align: 0.8em;
-  color: var(--ink-soft);
-  font-weight: 500;
-}
-.callout.dark .v small { color: rgba(255,255,255,0.55); }
-.callout .desc {
-  font: 400 0.85rem/1.5 var(--f-sans);
-  color: var(--ink-soft);
-}
-.callout.dark .desc { color: rgba(255,255,255,0.72); }
-
-.callout-pair {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-}
-@media (max-width: 520px) { .callout-pair { grid-template-columns: 1fr; } }
-
-.interim-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  border-top: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
-}
-.interim {
-  padding: clamp(1.5rem, 3vh, 2.25rem) clamp(1.25rem, 2.5vw, 2rem);
-}
-.interim + .interim { border-left: 1px solid var(--rule); }
-@media (max-width: 880px) {
-  .interim-row { grid-template-columns: 1fr; }
-  .interim + .interim { border-left: 0; border-top: 1px solid var(--rule); }
-}
-.interim .num {
-  font: 500 0.62rem/1 var(--f-mono);
-  letter-spacing: 0.18em;
-  color: var(--ink-faint);
-  text-transform: uppercase;
-  margin-bottom: 0.75rem;
-  display: block;
-}
-.interim h4 {
-  font: 800 1.05rem/1.2 var(--f-sans);
-  letter-spacing: -0.015em;
-  text-transform: uppercase;
-  margin-bottom: 0.6rem;
-}
-.interim p {
-  font: 400 0.88rem/1.55 var(--f-sans);
-  color: var(--ink-soft);
-}
-
-.role-row {
-  display: grid;
-  grid-template-columns: 9rem minmax(0, 1fr) auto;
-  gap: clamp(1.5rem, 3vw, 3rem);
-  padding: clamp(2.25rem, 5vh, 3.5rem) var(--gutter-x);
-  border-bottom: 1px solid var(--rule);
-  align-items: start;
-}
-@media (max-width: 720px) {
-  .role-row { grid-template-columns: 1fr; gap: 1rem; }
-}
-.role-row .ix {
-  font: 500 0.62rem/1 var(--f-mono);
-  letter-spacing: 0.18em;
-  color: var(--ink-faint);
-  text-transform: uppercase;
-  padding-top: 0.4rem;
-}
-.role-row .body {
-  min-width: 0;
-}
-.role-row .body .org-line {
-  font: 500 0.7rem/1 var(--f-mono);
-  letter-spacing: 0.18em;
-  color: var(--ink-faint);
-  text-transform: uppercase;
-  margin-bottom: 0.6rem;
-}
-.role-row .body h3 {
-  font: 800 clamp(1.2rem, 2vw, 1.55rem)/1.1 var(--f-sans);
-  letter-spacing: -0.02em;
-  margin-bottom: 0.85rem;
-  max-width: 32ch;
-}
-.role-row .body p {
-  font: 400 0.92rem/1.55 var(--f-sans);
-  color: var(--ink-soft);
-  max-width: 68ch;
-  text-wrap: pretty;
-}
-.role-row .body .impact-strip {
-  margin-top: 1rem;
-  display: flex;
-  gap: 1.25rem;
-  flex-wrap: wrap;
-  padding-top: 0.85rem;
-  border-top: 1px solid var(--rule);
-}
-.role-row .body .impact-strip .it {
-  display: flex; flex-direction: column; gap: 0.2rem;
-}
-.role-row .body .impact-strip .it .v {
-  font: 800 1rem/1 var(--f-sans);
-  letter-spacing: -0.02em;
-}
-.role-row .body .impact-strip .it .k {
-  font: 500 0.58rem/1 var(--f-mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-}
-.role-row .when {
-  font: 500 0.78rem/1.4 var(--f-mono);
-  color: var(--ink);
-  padding-top: 0.4rem;
-  text-align: right;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-@media (max-width: 720px) {
-  .role-row .when { text-align: left; }
-}
-
-.log {
-  padding: clamp(2.5rem, 5vh, 4rem) var(--gutter-x);
-}
-.log h3 {
-  font: 500 0.7rem/1 var(--f-mono);
-  letter-spacing: 0.2em;
-  color: var(--ink-faint);
-  text-transform: uppercase;
-  margin-bottom: 1.5rem;
-}
-.log table {
+.rail-tip {
+  position: absolute;
+  left: 0;
+  top: 0;
   width: 100%;
-  border-collapse: collapse;
+  height: 100%;
+  background: var(--ink);
 }
-.log td, .log th {
-  padding: 1rem 0.5rem;
-  vertical-align: baseline;
-  border-bottom: 1px solid var(--rule);
-  text-align: left;
+.rail-tip::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 11px;
+  height: 11px;
+  background: var(--accent);
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  transform: translate(-50%, 50%);
 }
-.log thead th {
-  font: 500 0.58rem/1 var(--f-mono);
+
+.bix {
+  display: block;
+  font: 500 0.66rem/1 var(--f-mono);
   letter-spacing: 0.18em;
-  text-transform: uppercase;
   color: var(--ink-faint);
-  padding-bottom: 0.6rem;
+  text-transform: uppercase;
+  margin-bottom: 0.55rem;
+  transition: color 0.3s ease;
 }
-.log .role-cell {
-  font: 600 0.95rem/1.35 var(--f-sans);
+.entry.on .bix { color: var(--ink); }
+.bix i {
+  font-style: normal;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: var(--paper);
+  border: 1.5px solid var(--ink-faint);
+  margin-right: 0.5rem;
+  vertical-align: baseline;
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+.entry.on .bix i {
+  background: var(--accent);
+  border-color: var(--ink);
+}
+
+.nd {
+  position: absolute;
+  left: calc(7px - var(--railpad));
+  top: 0.34em;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 1.5px solid var(--ink-faint);
+  transform: translateX(-50%);
+  transition: background 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+}
+.nd.lit {
+  background: var(--accent);
+  border-color: var(--ink);
+  transform: translateX(-50%) scale(1.3);
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: clamp(1.5rem, 4vw, 3rem);
+  align-items: start;
+}
+.bullets li .tx { display: inline-block; }
+
+/* ── extra-curricular year clusters ── */
+.yrs {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2.25rem, 5vh, 3.5rem);
+}
+.yr-group {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 11rem) minmax(0, 1fr);
+  gap: clamp(1.5rem, 4vw, 3rem);
+  padding-top: 1.5rem;
+  position: relative;
+}
+.yr-group::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--ink);
+  transform-origin: left center;
+}
+.yr {
+  overflow: hidden;
+  white-space: nowrap;
+  width: max-content;
+  max-width: none;
+  font: 900 clamp(2.8rem, 6.5vw, 4.8rem)/1 var(--f-sans);
+  letter-spacing: -0.04em;
+  color: transparent;
+  -webkit-text-stroke: 1.5px rgba(9, 9, 11, 0.42);
+}
+.yr span { display: inline-block; }
+.yr-role {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1.25rem;
+  padding: 0.95rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.yr-role:first-child { padding-top: 0.1rem; }
+.yr-role .r {
+  font: 600 0.95rem/1.5 var(--f-sans);
   letter-spacing: -0.005em;
+  color: var(--ink);
 }
-.log .org-cell {
-  font: 400 0.88rem/1.4 var(--f-sans);
+.yr-role .r .o {
+  font-weight: 400;
   color: var(--ink-soft);
 }
-.log .date-cell {
-  font: 500 0.78rem/1 var(--f-mono);
+.yr-role .d {
+  font: 500 0.72rem/1.5 var(--f-mono);
   color: var(--ink-faint);
   letter-spacing: 0.05em;
   white-space: nowrap;
 }
-@media (max-width: 640px) {
-  .log table, .log tbody, .log thead, .log tr { display: block; }
-  .log thead { display: none; }
-  .log tr { padding: 1rem 0; border-bottom: 1px solid var(--rule); }
-  .log td { display: block; padding: 0.2rem 0; border-bottom: 0; }
+
+@media (max-width: 720px) {
+  .split { grid-template-columns: 1fr; }
+  .yr-group { grid-template-columns: 1fr; gap: 0.75rem; }
+  .yr-role { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+}
+
+/* ── motion: hidden pre-states only when JS mounted (.anim) + motion allowed,
+   so reduced-motion and print render fully static ── */
+@media (prefers-reduced-motion: no-preference) {
+  .anim .section-title {
+    opacity: 0;
+    transform: translateY(26px);
+    transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1), transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .anim .section-title.on {
+    opacity: 1;
+    transform: none;
+  }
+
+  .anim .rail-tip { height: 0; }
+  .anim .entry-title {
+    opacity: 0;
+    transform: translateX(-22px);
+    transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1), transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .anim .entry.on .entry-title {
+    opacity: 1;
+    transform: none;
+  }
+  .anim .entry-when {
+    opacity: 0;
+    transition: opacity 0.6s ease 0.25s;
+  }
+  .anim .entry.on .entry-when { opacity: 1; }
+  .anim .visual-rail {
+    opacity: 0;
+    transform: translateY(22px);
+    transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.3s, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.3s;
+  }
+  .anim .entry.on .visual-rail {
+    opacity: 1;
+    transform: none;
+  }
+  .anim .bullets li .tx {
+    clip-path: inset(-4% 102% -8% -2%);
+    transition: clip-path 0.65s cubic-bezier(0.22, 1, 0.36, 1) 0.05s;
+  }
+  .anim .bullets li.on .tx { clip-path: inset(-4% -3% -8% -2%); }
+  .anim .nd.lit { animation: ndPop 0.4s cubic-bezier(0.2, 1.4, 0.3, 1); }
+
+  .anim .yr-group::before {
+    transform: scaleX(0);
+    transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .anim .yr-group.on::before { transform: scaleX(1); }
+  .anim .yr span {
+    transform: translateY(112%);
+    transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .anim .yr span:nth-child(2) { transition-delay: 0.07s; }
+  .anim .yr span:nth-child(3) { transition-delay: 0.14s; }
+  .anim .yr span:nth-child(4) { transition-delay: 0.21s; }
+  .anim .yr-group.on .yr span { transform: none; }
+  .anim .yr-role {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1), transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .anim .yr-role:nth-child(1) { transition-delay: 0.2s; }
+  .anim .yr-role:nth-child(2) { transition-delay: 0.34s; }
+  .anim .yr-group.on .yr-role {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ndPop {
+  0% { transform: translateX(-50%) scale(0.6); }
+  60% { transform: translateX(-50%) scale(1.55); }
+  100% { transform: translateX(-50%) scale(1.3); }
+}
+
+@media print {
+  .section-title,
+  .tx,
+  .entry-when,
+  .entry-title,
+  .visual-rail,
+  .yr span,
+  .yr-role {
+    opacity: 1 !important;
+    transform: none !important;
+    clip-path: none !important;
+    animation: none !important;
+  }
+  .rail-tip { height: 100% !important; }
+  .yr-group::before { transform: none !important; }
 }
 </style>

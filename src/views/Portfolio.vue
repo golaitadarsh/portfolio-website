@@ -3,8 +3,34 @@ import { defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref } from 
 import HeroSection from '../HeroSection.vue'
 import BeamsBackground from '../components/BeamsBackground.vue'
 import CorporateSlider from '../components/portfolio/CorporateSlider.vue'
+import MedalScrub from '../components/portfolio/MedalScrub.vue'
+import PorPhotoWall from '../components/portfolio/PorPhotoWall.vue'
+import type { WallPhoto } from '../components/portfolio/PorPhotoWall.vue'
 import TimedCards from '../components/portfolio/TimedCards.vue'
 import signatureSvgRaw from '../../assets/signature.svg?raw'
+
+import porConvocationImg from '../../assets/por/01-convocation-2022.jpg'
+import porTenderVisitImg from '../../assets/por/03-tender-visit-mess.jpg'
+import porAmritMahotsavImg from '../../assets/por/10-azadi-amrit-mahotsav.jpg'
+import porOutletLaunchImg from '../../assets/por/04-bringing-food-vendors.jpg'
+import porGarbaNightImg from '../../assets/por/11-campus-events-garba.jpg'
+import porSmartLaundryImg from '../../assets/por/06-smart-laundry.jpg'
+import porTreePlantationImg from '../../assets/por/14-tree-plantation-drive.jpg'
+import porPromNightImg from '../../assets/por/12-organised-prom.jpg'
+import porRunYourCafeImg from '../../assets/por/13-run-your-own-cafe.jpg'
+
+// PoR photo wall — 3×3 flip grid on the flagship council entry.
+const POR_WALL_PHOTOS: WallPhoto[] = [
+  { src: porConvocationImg, cap: 'Convocation 2022' },
+  { src: porTenderVisitImg, cap: 'Mess Tender Visit' },
+  { src: porAmritMahotsavImg, cap: 'Amrit Mahotsav' },
+  { src: porOutletLaunchImg, cap: 'Outlet Launch' },
+  { src: porGarbaNightImg, cap: 'Garba Night' },
+  { src: porSmartLaundryImg, cap: 'Smart Laundry' },
+  { src: porTreePlantationImg, cap: 'Tree Plantation Drive' },
+  { src: porPromNightImg, cap: 'Prom Night' },
+  { src: porRunYourCafeImg, cap: 'Run Your Own Café' },
+]
 
 // Normalise the source SVG so it can be safely injected via v-html and
 // measured with getTotalLength(): drop XML prolog/DOCTYPE/<metadata>, kill
@@ -232,6 +258,7 @@ let heroVpW = 0
 let heroVpH = 0
 
 const sectionToNav: Record<string, string | null> = {
+  hero: null,
   summary: null,
   education: 'education',
   experience: 'experience',
@@ -480,25 +507,38 @@ function setupEducationPin(): (() => void) | null {
   if (!sec) return null
   const mqMotion = matchMedia('(prefers-reduced-motion: reduce)')
   let raf = 0
+  // Rect READ happens in the scroll event, class WRITE in the rAF — reading
+  // after another section's rAF has written styles forces a synchronous
+  // layout, and with four scroll-driven sections that thrash repeats every
+  // scrolled frame.
+  let headIn = false, stageName = false, stageDetails = false
 
-  function update() {
-    raf = 0
-    if (!sec!.classList.contains('edu-staged')) return
+  function readScroll() {
     const rect = sec!.getBoundingClientRect()
     const range = rect.height - innerHeight
     const p = range > 0 ? Math.min(1, Math.max(0, -rect.top / range)) : 1
-    sec!.classList.toggle('head-in', rect.top < innerHeight * 0.92)
-    sec!.classList.toggle('stage-name', p >= 0.14)
-    sec!.classList.toggle('stage-details', p >= 0.48)
+    headIn = rect.top < innerHeight * 0.92
+    stageName = p >= 0.14
+    stageDetails = p >= 0.48
   }
-  function onScroll() { if (!raf) raf = requestAnimationFrame(update) }
+  function write() {
+    raf = 0
+    if (!sec!.classList.contains('edu-staged')) return
+    sec!.classList.toggle('head-in', headIn)
+    sec!.classList.toggle('stage-name', stageName)
+    sec!.classList.toggle('stage-details', stageDetails)
+  }
+  function onScroll() {
+    readScroll()
+    if (!raf) raf = requestAnimationFrame(write)
+  }
 
   function apply() {
     const on = !mqMotion.matches
     sec!.classList.toggle('edu-staged', on)
     if (on) {
       addEventListener('scroll', onScroll, { passive: true })
-      update()
+      onScroll()
     } else {
       removeEventListener('scroll', onScroll)
       sec!.classList.remove('stage-name', 'stage-details', 'head-in')
@@ -530,24 +570,36 @@ function setupExperiencePin(): (() => void) | null {
     panels.forEach((el, j) => el.classList.toggle('is-active', j === i))
     sec!.dataset.xpActive = String(i)
   }
-  function update() {
-    raf = 0
-    if (!sec!.classList.contains('xp-staged')) return
+  // Same read/write split as the other pinned sections — rect read in the
+  // scroll event, class writes in the rAF.
+  let headIn = false, stageIn = false, active = 0
+
+  function readScroll() {
     const rect = sec!.getBoundingClientRect()
     const range = rect.height - innerHeight
     const p = range > 0 ? Math.min(1, Math.max(0, -rect.top / range)) : 1
-    sec!.classList.toggle('head-in', rect.top < innerHeight * 0.92)
-    sec!.classList.toggle('stage-in', rect.top < innerHeight * 0.55)
-    setActive(p < 0.38 ? 0 : p < 0.72 ? 1 : 2)
+    headIn = rect.top < innerHeight * 0.92
+    stageIn = rect.top < innerHeight * 0.55
+    active = p < 0.38 ? 0 : p < 0.72 ? 1 : 2
   }
-  function onScroll() { if (!raf) raf = requestAnimationFrame(update) }
+  function write() {
+    raf = 0
+    if (!sec!.classList.contains('xp-staged')) return
+    sec!.classList.toggle('head-in', headIn)
+    sec!.classList.toggle('stage-in', stageIn)
+    setActive(active)
+  }
+  function onScroll() {
+    readScroll()
+    if (!raf) raf = requestAnimationFrame(write)
+  }
 
   function apply() {
     const on = !mqMotion.matches && innerWidth > 880 && innerHeight > 620
     sec!.classList.toggle('xp-staged', on)
     if (on) {
       addEventListener('scroll', onScroll, { passive: true })
-      update()
+      onScroll()
     } else {
       removeEventListener('scroll', onScroll)
       sec!.classList.remove('stage-in', 'head-in')
@@ -566,17 +618,99 @@ function setupExperiencePin(): (() => void) | null {
   }
 }
 
+// Achievements: section is 280vh tall; content pins while the scroll
+// scrubs the medal presentation to its end (MedalScrub reads the same
+// section rect via [data-medal-driver]). A beam runs down the list and
+// lights each recognition row in sync; a gold aura swells behind the
+// medal while it is presented. Small screens / reduced motion fall back
+// to the normal in-flow section with every row lit.
+const awRef = ref<HTMLElement | null>(null)
+
+function setupAwardsPin(): (() => void) | null {
+  const sec = awRef.value
+  if (!sec) return null
+  const rows = Array.from(sec.querySelectorAll<HTMLElement>('.aw-bullets > li'))
+  const mqMotion = matchMedia('(prefers-reduced-motion: reduce)')
+  let raf = 0
+
+  // First row lights at LIT_T0, the rest follow evenly — the last one
+  // lands just before the medal is boxed back up (frames end at p=0.92).
+  const LIT_T0 = 0.1
+  const LIT_STEP = rows.length > 1 ? 0.72 / (rows.length - 1) : 1
+
+  // Same read/write split as the other pinned sections — rect read in the
+  // scroll event, class/var writes in the rAF.
+  let headIn = false, p = 0
+
+  function readScroll() {
+    const rect = sec!.getBoundingClientRect()
+    const range = rect.height - innerHeight
+    p = range > 0 ? Math.min(1, Math.max(0, -rect.top / range)) : 1
+    headIn = rect.top < innerHeight * 0.92
+  }
+  function write() {
+    raf = 0
+    if (!sec!.classList.contains('aw-staged')) return
+    sec!.classList.toggle('head-in', headIn)
+    sec!.style.setProperty('--awp', p.toFixed(4))
+    // gold aura behind the medal — swells to its peak mid-presentation,
+    // fades out as the box closes
+    const glow = Math.sin(Math.min(1, p / 0.92) * Math.PI)
+    sec!.style.setProperty('--aw-glow', glow.toFixed(3))
+    rows.forEach((li, i) => {
+      li.classList.toggle('is-lit', p >= LIT_T0 + i * LIT_STEP)
+    })
+  }
+  function onScroll() {
+    readScroll()
+    if (!raf) raf = requestAnimationFrame(write)
+  }
+
+  function apply() {
+    const on = !mqMotion.matches && innerWidth > 980 && innerHeight > 620
+    sec!.classList.toggle('aw-staged', on)
+    if (on) {
+      addEventListener('scroll', onScroll, { passive: true })
+      onScroll()
+    } else {
+      removeEventListener('scroll', onScroll)
+      sec!.classList.remove('head-in')
+      sec!.style.removeProperty('--awp')
+      sec!.style.removeProperty('--aw-glow')
+      rows.forEach((li) => li.classList.add('is-lit'))
+    }
+  }
+  mqMotion.addEventListener?.('change', apply)
+  addEventListener('resize', apply, { passive: true })
+  apply()
+  return () => {
+    mqMotion.removeEventListener?.('change', apply)
+    removeEventListener('resize', apply)
+    removeEventListener('scroll', onScroll)
+    if (raf) cancelAnimationFrame(raf)
+  }
+}
+
 // Summary: self-contained interactive character (own canvas, own scene —
 // completely separate from the hero stage character). He jumps in when the
 // section scrolls into view, takes icon-button action requests while
 // pinned, and during the final pin segment scrubs a contact-locked
-// push-out — he walks INTO the text block first, then text and character
-// travel off the left edge together at the same speed, like a real shove.
-// The pushing clip only advances while the user is actually scrolling
-// (SummaryCharacter freezes it on scroll idle).
+// push-out — he walks INTO the text block, struggles against it for a beat
+// (pushing visibly before anything moves), then text and character travel
+// off the left edge together at the same speed, like a real shove.
+// The whole push-out is scroll-SCRUBBED with a short damping tail: scroll
+// position sets the choreography target (and the pushing clip's playhead,
+// via setPushTravel), and the displayed timeline eases toward it over
+// ~160ms — so a wheel flick reads as a quick glide instead of a teleport,
+// while a slow scroll still tracks essentially 1:1, retrace plays it
+// backwards, and everything settles exactly where the scroll sits.
 const summaryRef = ref<HTMLElement | null>(null)
 const summaryCharRef = ref<any>(null)
 const sumStaged = ref(false)
+// Gates the SummaryCharacter mount — flipped by an IntersectionObserver when
+// the user is within ~two viewports of the section, so the 4MB rig never
+// competes with the hero's first-paint assets.
+const summaryNear = ref(false)
 
 // Live character state, emitted by SummaryCharacter — drives button states.
 const charState = reactive({ ready: false, busy: false, pushing: false })
@@ -589,36 +723,136 @@ function playCharAction(name: string) {
   summaryCharRef.value?.playAction?.(name)
 }
 
-const PUSH_START = 0.5   // pin progress where the push-out segment begins
-const PUSH_CONTACT = 0.22 // share of the push spent walking to the text
+// Push-out levers. The runway lives inside the pin's progress p (0..1):
+// nothing moves before `start`, everything is done and settled by `end` so
+// the pin never releases mid-motion.
+const PUSH = {
+  start: 0.53,     // pin progress where the push runway begins
+  end: 0.94,       // pin progress where the exit is fully complete (settle buffer)
+  contact: 0.28,   // MANUAL LEVER — share of the runway spent walking in.
+  slide: 0.62,     // MANUAL LEVER — share of the runway where the text starts
+                   // to move. The gap [contact, slide) is the STRUGGLE phase:
+                   // he's at the text, visibly pushing (the clip strides), but
+                   // nothing budges yet — so the viewer reads the push before
+                   // the slide answers it. Scrubbed like everything else.
+  strugPx: 1100,   // fake clip-travel px fed during the struggle so his legs
+                   // drive against the ground while he holds position
+                   // (~2 loops of the pushing clip at 520 px/s)
+  reachFrac: 0.20, // lead-hand reach ahead of body center, fraction of slot height
+  bodyFrac: 0.15,  // body half-width, fraction of slot height
+  clearPad: 48,    // extra px past the left edge so nothing peeks back in
+}
 
 function setupSummaryStage(): (() => void) | null {
   const sec = summaryRef.value
   if (!sec) return null
+  const body = sec.querySelector<HTMLElement>('.summary-grid .body')
+  const slot = sec.querySelector<HTMLElement>('.char-slot')
+  if (!body || !slot) return null
   const mqMotion = matchMedia('(prefers-reduced-motion: reduce)')
   let raf = 0
   let pushOn = false
 
-  function update() {
-    raf = 0
-    if (!sumStaged.value) return
+  // ONE runway scalar: `sTarget` is a PURE function of scroll position;
+  // the displayed `s` chases it with a ~160ms exponential tail. Wheel and
+  // smooth-scroll inputs move the scroll in discrete jumps, and a raw scrub
+  // turns each jump into a teleport of the whole choreography — the tail
+  // stretches those jumps into a brief glide while keeping every guarantee
+  // that matters: slow scroll tracks essentially 1:1, scroll back plays in
+  // reverse, and `s` converges onto (then snaps to) exactly where the
+  // scroll sits, so nothing free-runs once input stops.
+  let s = 0
+  let sTarget = 0
+  let lastT = 0
+  const SCRUB_TAU = 160 // ms — bigger = softer/laggier, smaller = snappier
+  // Travel distances in px, measured from the real layout.
+  let apprPx = 0, exitPx = 0
+
+  function choreo(v: number) {
+    // Contact-locked choreography in three scrubbed phases: eased walk-in
+    // (a stride, not a glide), a struggle at the text (pushing with nothing
+    // moving yet), then text and character travel off together at the same
+    // speed. `strug` never touches position — it only feeds clip travel.
+    const appr = smoothstep(0, 1, Math.min(1, v / PUSH.contact))
+    const strug = Math.min(1, Math.max(0, (v - PUSH.contact) / (PUSH.slide - PUSH.contact)))
+    const exit = Math.max(0, (v - PUSH.slide) / (1 - PUSH.slide))
+    return { appr, strug, exit }
+  }
+
+  function publish() {
+    const { appr, exit } = choreo(s)
+    sec!.style.setProperty('--sum-appr', appr.toFixed(4))
+    sec!.style.setProperty('--sum-exit', exit.toFixed(4))
+    sec!.style.setProperty('--sum-body-x', `${(-exit * exitPx).toFixed(1)}px`)
+    sec!.style.setProperty('--sum-char-x', `${(-(appr * apprPx + exit * exitPx)).toFixed(1)}px`)
+  }
+
+  function measure() {
+    // Rects include the live transforms — subtract what we applied to
+    // recover layout positions, so mid-push resizes re-measure correctly.
+    const { appr, exit } = choreo(s)
+    const bodyR = body!.getBoundingClientRect()
+    const slotR = slot!.getBoundingClientRect()
+    const bodyX = -exit * exitPx
+    const charX = -(appr * apprPx + exit * exitPx)
+    const textRight = bodyR.right - bodyX
+    const slotCenter = (slotR.left + slotR.right) / 2 - charX
+    const reach = slotR.height * PUSH.reachFrac
+    const bodyHalf = slotR.height * PUSH.bodyFrac
+    // Walk-in ends with his lead hands at the text's right edge; the shove
+    // then carries BOTH columns far enough that text and body fully clear
+    // the viewport's left edge at exit = 1.
+    apprPx = Math.max(0, slotCenter - reach - textRight)
+    exitPx = Math.max(textRight, slotCenter + bodyHalf - apprPx) + PUSH.clearPad
+  }
+
+  // Layout READ — runs in the scroll event (before this frame's rAF writes)
+  // so the rect never forces a layout against freshly written styles.
+  function readScroll() {
     const rect = sec!.getBoundingClientRect()
     const range = rect.height - innerHeight
     const p = range > 0 ? Math.min(1, Math.max(0, -rect.top / range)) : 0
-    const q = Math.min(1, Math.max(0, (p - PUSH_START) / (1 - PUSH_START)))
-    // Contact-locked choreography: `appr` walks him to the text block,
-    // `exit` moves him AND the text at the same speed once touching.
-    const appr = Math.min(1, q / PUSH_CONTACT)
-    const exit = Math.max(0, (q - PUSH_CONTACT) / (1 - PUSH_CONTACT))
-    sec!.style.setProperty('--sum-appr', appr.toFixed(4))
-    sec!.style.setProperty('--sum-exit', exit.toFixed(4))
-    const wantPush = q > 0.01
+    sTarget = Math.min(1, Math.max(0, (p - PUSH.start) / (PUSH.end - PUSH.start)))
+  }
+
+  // Character travel (px, positive) along the runway at scalar v — the same
+  // quantity publish() writes into --sum-char-x. SummaryCharacter scrubs
+  // the pushing clip's playhead from it, so stride and columns share one
+  // timeline.
+  function travelOf(v: number) {
+    // The struggle term is travel the CLIP sees but the columns don't —
+    // strides against a text block that hasn't budged yet.
+    const { appr, strug, exit } = choreo(v)
+    return appr * apprPx + strug * PUSH.strugPx + exit * exitPx
+  }
+
+  // Style WRITE — CSS-var publish + character scrub, no layout reads.
+  // Eases `s` toward `sTarget` (frame-rate independent) and keeps its own
+  // rAF alive ONLY until it converges — it snaps at an epsilon and the loop
+  // goes back to sleep, so nothing runs once the scrub has settled.
+  function tick(now: number) {
+    raf = 0
+    if (!sumStaged.value) return
+    const dt = lastT ? Math.min(100, now - lastT) : 16.7
+    lastT = now
+    s += (sTarget - s) * (1 - Math.exp(-dt / SCRUB_TAU))
+    if (Math.abs(sTarget - s) < 0.001) s = sTarget
+    publish()
+    const wantPush = s > 0.005
     if (wantPush !== pushOn) {
       pushOn = wantPush
       summaryCharRef.value?.setPushing?.(pushOn)
     }
+    // Absolute travel px, not a velocity — the clip's playhead is a pure
+    // function of it, so the stride is frame-locked to the columns.
+    summaryCharRef.value?.setPushTravel?.(travelOf(s))
+    if (s !== sTarget) raf = requestAnimationFrame(tick)
+    else lastT = 0
   }
-  function onScroll() { if (!raf) raf = requestAnimationFrame(update) }
+  function onScroll() {
+    readScroll()
+    if (!raf) raf = requestAnimationFrame(tick)
+  }
 
   // Entrance: fire his jump-in once the section scrolls into view.
   const io = new IntersectionObserver((entries) => {
@@ -629,32 +863,209 @@ function setupSummaryStage(): (() => void) | null {
   }, { threshold: 0.35 })
   io.observe(sec)
 
+  // Mount the (heavy) summary character only when the user is within ~two
+  // viewports of the section — keeps the 4MB rig + its parse/skin work out
+  // of the initial page load entirely.
+  const nearIo = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) {
+      summaryNear.value = true
+      nearIo.disconnect()
+    }
+  }, { rootMargin: '200% 0px 200% 0px' })
+  nearIo.observe(sec)
+
   function apply() {
     const on = !mqMotion.matches && innerWidth > 980 && innerHeight > 560
     sumStaged.value = on
     sec!.classList.toggle('sum-staged', on)
     if (on) {
       addEventListener('scroll', onScroll, { passive: true })
-      update()
+      measure()
+      readScroll()
+      // Snap, don't glide: on (re)enable — first load mid-section, resize —
+      // the stage must sit exactly where the scroll is, not fast-forward
+      // the choreography to get there.
+      s = sTarget
+      onScroll()
     } else {
       removeEventListener('scroll', onScroll)
-      sec!.style.setProperty('--sum-appr', '0')
-      sec!.style.setProperty('--sum-exit', '0')
+      s = 0
+      sTarget = 0
+      lastT = 0
+      publish()
       if (pushOn) {
         pushOn = false
         summaryCharRef.value?.setPushing?.(false)
       }
+      summaryCharRef.value?.setPushTravel?.(0)
     }
   }
   mqMotion.addEventListener?.('change', apply)
   addEventListener('resize', apply, { passive: true })
   apply()
+  // Web-font swap reflows the text column — re-measure once fonts settle.
+  document.fonts?.ready?.then(() => {
+    if (sumStaged.value) {
+      measure()
+      onScroll()
+    }
+  })
   return () => {
     mqMotion.removeEventListener?.('change', apply)
     removeEventListener('resize', apply)
     removeEventListener('scroll', onScroll)
     io.disconnect()
+    nearIo.disconnect()
     if (raf) cancelAnimationFrame(raf)
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// PoR "Rail" treatment (design handoff) — a vertical progress rail whose
+// fill tracks a playhead at 72% of viewport height. Entries ignite, bullet
+// node-dots pop, and .cnt numbers count up as the fill passes them; all
+// reversible on scroll-up. The rAF loop only runs while the rail is near
+// the viewport. Extra-Curricular year clusters reveal via the same IO.
+// ────────────────────────────────────────────────────────────────────
+const porSecRef = ref<HTMLElement | null>(null)
+const extraSecRef = ref<HTMLElement | null>(null)
+const porRailWrapRef = ref<HTMLElement | null>(null)
+const porRailTipRef = ref<HTMLElement | null>(null)
+
+function setupPorRail(): (() => void) | null {
+  const porSec = porSecRef.value
+  const extraSec = extraSecRef.value
+  const wrap = porRailWrapRef.value
+  const tip = porRailTipRef.value
+  if (!porSec || !extraSec || !wrap || !tip) return null
+
+  const motionOK = matchMedia('(prefers-reduced-motion: no-preference)').matches
+  let alive = true
+  let raf: number | null = null
+
+  // Hidden pre-animation states are gated behind .anim so reduced-motion
+  // (and print) render fully visible and static.
+  if (motionOK) {
+    porSec.classList.add('anim')
+    extraSec.classList.add('anim')
+  }
+
+  /* count-up: parses prefix / number / suffix from the text
+     (₹80+ lakh, 3,600+, 58K all work); restores exact original at end */
+  function runCounters(scope: HTMLElement) {
+    scope.querySelectorAll<HTMLElement>('.cnt').forEach((el) => {
+      if (el.dataset.done) return
+      el.dataset.done = '1'
+      const orig = el.dataset.orig || (el.dataset.orig = el.textContent || '')
+      if (!motionOK) {
+        el.textContent = orig
+        return
+      }
+      const m = orig.match(/^([^0-9]*)([\d,]+)(.*)$/s)
+      if (!m) return
+      const target = parseInt(m[2].replace(/,/g, ''), 10)
+      const commas = m[2].includes(',')
+      const t0 = performance.now()
+      const dur = 850
+      const tick = (t: number) => {
+        if (!alive) return
+        const p = Math.min(1, (t - t0) / dur)
+        const e = 1 - Math.pow(1 - p, 3)
+        if (p < 1) {
+          const n = Math.round(target * e)
+          el.textContent = m[1] + (commas ? n.toLocaleString('en-US') : String(n)) + m[3]
+          requestAnimationFrame(tick)
+        } else {
+          el.textContent = orig
+        }
+      }
+      requestAnimationFrame(tick)
+    })
+  }
+
+  /* rewind counters so they replay on next reveal */
+  function resetCounters(scope: HTMLElement) {
+    scope.querySelectorAll<HTMLElement>('.cnt').forEach((el) => {
+      delete el.dataset.done
+      if (el.dataset.orig) el.textContent = el.dataset.orig
+    })
+  }
+
+  /* section titles + year clusters reveal; rewind when they exit below */
+  const revealIO = new IntersectionObserver(
+    (es) => {
+      es.forEach((en) => {
+        if (en.isIntersecting) en.target.classList.add('on')
+        else if (en.boundingClientRect.top > 0) en.target.classList.remove('on')
+      })
+    },
+    { threshold: 0.15, rootMargin: '0px 0px -6% 0px' },
+  )
+  ;[porSec, extraSec].forEach((sec) => {
+    sec.querySelectorAll('.section-num, .section-title, .yr-group').forEach((el) => revealIO.observe(el))
+  })
+
+  /* scroll-scrubbed rail: fill tracks a playhead at 72% viewport height */
+  const entries = Array.from(wrap.querySelectorAll<HTMLElement>('.entry'))
+  const lis = Array.from(wrap.querySelectorAll<HTMLElement>('.bullets > li'))
+
+  const frame = () => {
+    const r = wrap.getBoundingClientRect()
+    const t = motionOK
+      ? Math.max(0, Math.min(r.height, window.innerHeight * 0.72 - r.top))
+      : r.height
+    tip.style.height = `${t}px`
+
+    entries.forEach((e) => {
+      e.classList.toggle('on', t >= e.getBoundingClientRect().top - r.top + 8)
+    })
+    lis.forEach((li) => {
+      const nd = li.querySelector('.nd')
+      const y = li.getBoundingClientRect().top - r.top + 12
+      if (t >= y) {
+        if (!li.classList.contains('on')) {
+          li.classList.add('on')
+          runCounters(li)
+        }
+        nd?.classList.add('lit')
+      } else {
+        if (li.classList.contains('on')) {
+          li.classList.remove('on')
+          resetCounters(li)
+        }
+        nd?.classList.remove('lit')
+      }
+    })
+  }
+  const loop = () => {
+    frame()
+    raf = requestAnimationFrame(loop)
+  }
+
+  /* run the rAF loop only while the rail is near the viewport */
+  const railIO = new IntersectionObserver(
+    (es) => {
+      const en = es[es.length - 1]
+      if (en.isIntersecting) {
+        if (raf == null) raf = requestAnimationFrame(loop)
+      } else {
+        if (raf != null) {
+          cancelAnimationFrame(raf)
+          raf = null
+        }
+        frame() /* settle state once when leaving */
+      }
+    },
+    { rootMargin: '30% 0px 45% 0px' },
+  )
+  railIO.observe(wrap)
+
+  return () => {
+    alive = false
+    if (raf != null) cancelAnimationFrame(raf)
+    raf = null
+    revealIO.disconnect()
+    railIO.disconnect()
   }
 }
 
@@ -789,6 +1200,35 @@ onMounted(() => {
   )
   targets.forEach((t) => scrollSpy!.observe(t))
 
+  // Nav → pinned-section landing. A plain anchor lands at the pin's START,
+  // where the staged reveal is still blank (header only) — the viewer has to
+  // scroll another full viewport before any content appears, so the jump
+  // reads as broken. Land inside the pin instead, at the first progress
+  // where the stage is fully readable. Non-staged fallbacks (mobile nav is
+  // hidden anyway, reduced motion) keep the native anchor behavior.
+  const NAV_PIN_LANDING: Record<string, { cls: string; p: number }> = {
+    education:  { cls: 'edu-staged', p: 0.52 },
+    experience: { cls: 'xp-staged',  p: 0.16 },
+    awards:     { cls: 'aw-staged',  p: 0.22 },
+  }
+  const onNavClick = (e: Event) => {
+    const a = e.currentTarget as HTMLAnchorElement
+    const id = a.hash ? a.hash.slice(1) : ''
+    const conf = NAV_PIN_LANDING[id]
+    if (!conf) return
+    const sec = document.getElementById(id)
+    if (!sec || !sec.classList.contains(conf.cls)) return
+    e.preventDefault()
+    const extra = Math.max(0, sec.offsetHeight - window.innerHeight) * conf.p
+    const top = sec.getBoundingClientRect().top + window.scrollY + extra
+    history.replaceState(history.state, '', `#${id}`)
+    window.scrollTo({ top, behavior: 'smooth' })
+  }
+  navLinks.forEach((a) => a.addEventListener('click', onNavClick))
+  sectionCleanups.push(() => {
+    navLinks.forEach((a) => a.removeEventListener('click', onNavClick))
+  })
+
   // HeroCharacter lives inside .hs-sticky (behind the doors). Warm it up
   // early so it's ready when the doors part — but AFTER first paint and the
   // hero's own assets. The old IntersectionObserver fired immediately (the
@@ -812,9 +1252,15 @@ onMounted(() => {
   }
 
   // Pinned Education / Experience stages + scroll-entrance reveals.
-  for (const setup of [setupSummaryStage, setupEducationPin, setupExperiencePin, setupReveal]) {
-    const cleanup = setup()
-    if (cleanup) sectionCleanups.push(cleanup)
+  // Isolated per-section: one failing stage must not take down the scroll
+  // engines mounted after it (they gate hidden pre-states behind .anim).
+  for (const setup of [setupSummaryStage, setupEducationPin, setupExperiencePin, setupAwardsPin, setupPorRail, setupReveal]) {
+    try {
+      const cleanup = setup()
+      if (cleanup) sectionCleanups.push(cleanup)
+    } catch (err) {
+      console.error('[portfolio] section setup failed:', err)
+    }
   }
 })
 
@@ -1045,7 +1491,7 @@ onBeforeUnmount(() => {
              component hides its internal text buttons. Non-staged (mobile /
              reduced motion): the component shows its own buttons. -->
         <div class="char-slot">
-          <SummaryCharacter ref="summaryCharRef" :show-actions="!sumStaged" @state="onCharState" />
+          <SummaryCharacter v-if="summaryNear" ref="summaryCharRef" :show-actions="!sumStaged" @state="onCharState" />
         </div>
         <div
           v-if="sumStaged"
@@ -1053,6 +1499,7 @@ onBeforeUnmount(() => {
           :class="{ 'is-live': charState.ready }"
           aria-label="Character actions"
         >
+          <span class="sum-act-hint" aria-hidden="true">Make him move</span>
           <button type="button" class="sum-act" :disabled="charState.busy || charState.pushing" @click="playCharAction('jump')">
             <span class="sum-act-btn">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1194,13 +1641,6 @@ onBeforeUnmount(() => {
                 <div class="cell"><span class="k">CCPS turnaround</span><span class="v">−90% · 3 hrs</span></div>
                 <div class="cell"><span class="k">Models owned</span><span class="v">9 quarterly</span></div>
               </div>
-              <div class="slot xp-slot">
-                <div class="slot-body">
-                  <span class="slot-kind" data-kind="PHOTO">Photo</span>
-                  <span class="slot-name">Axis Bank Mumbai HQ · workspace</span>
-                  <span class="slot-aspect">wide · environmental shot</span>
-                </div>
-              </div>
             </article>
 
             <article class="xp-panel">
@@ -1221,13 +1661,6 @@ onBeforeUnmount(() => {
                 <div class="cell"><span class="k">Competitor SKUs</span><span class="v">10+ analysed</span></div>
                 <div class="cell"><span class="k">Prototyping</span><span class="v">Concept → build</span></div>
               </div>
-              <div class="slot xp-slot">
-                <div class="slot-body">
-                  <span class="slot-kind" data-kind="PHOTO">Photo</span>
-                  <span class="slot-name">Prototype bench — CAD · laser · 3D print</span>
-                  <span class="slot-aspect">wide · workshop shot</span>
-                </div>
-              </div>
             </article>
 
             <article class="xp-panel">
@@ -1247,13 +1680,6 @@ onBeforeUnmount(() => {
               <div class="xp-stats">
                 <div class="cell"><span class="k">Focus</span><span class="v">Bulk handling</span></div>
                 <div class="cell"><span class="k">Output</span><span class="v">Technical report</span></div>
-              </div>
-              <div class="slot xp-slot">
-                <div class="slot-body">
-                  <span class="slot-kind" data-kind="PHOTO">Photo</span>
-                  <span class="slot-name">Plant line — belt conveyors</span>
-                  <span class="slot-aspect">wide · industrial shot</span>
-                </div>
               </div>
             </article>
           </div>
@@ -1281,118 +1707,117 @@ onBeforeUnmount(() => {
     </section>
 
     <!-- Positions of Responsibility -->
-    <section id="por" class="section">
+    <section id="por" ref="porSecRef" class="section" data-no-reveal>
       <span class="section-num">04 · Positions of Responsibility</span>
       <h2 class="section-title">Positions of<br /><span class="accent-line">Responsibility</span></h2>
 
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Welfare Secretary | Interim General Secretary | Interim Cultural Secretary</p>
-          <span class="entry-when">May, 2022 — April, 2023</span>
-        </div>
-        <p class="entry-sub"><span>Student Council, IIT Gandhinagar</span></p>
+      <div class="rail-wrap" ref="porRailWrapRef">
+        <div class="rail" aria-hidden="true"><div class="rail-tip" ref="porRailTipRef"></div></div>
 
-        <div class="split" style="margin-top: 1rem;">
-          <ul class="bullets">
-            <li>Represented a <strong>3,600+ student community</strong> on institute decisions spanning food services, laundry, healthcare, commercial establishments, hostels and student affairs — coordinating with administration, external vendors, and a 25-member council as the sole bridge between students and the institute.</li>
-            <li>Student representative in <strong>procurement and tender evaluations</strong> for campus mess and laundry contracts — conducted operational due diligence across vendor facilities in Gujarat, Rajasthan and Delhi before contributing to institute-wide provider selection.</li>
-            <li><em>Designed a trial-based vendor selection system</em> via the Commercial Establishment &amp; Management Committee — engaged 20+ national chains and regional players, ran live campus trials, and onboarded outlets on demonstrated performance rather than lowest-cost bids.</li>
-            <li>Owned planning and governance of student initiatives with cumulative budgets exceeding <strong>₹80+ lakh</strong> as a student signing authority; led Convocation 2022 through a 68-member team and IITGN's 104-member Inter-IIT Cultural Meet contingent end-to-end.</li>
-          </ul>
+        <article class="entry">
+          <span class="bix"><i></i>Student Council, IIT Gandhinagar</span>
+          <div class="entry-head">
+            <p class="entry-title">Welfare Secretary | Interim General Secretary | Interim Cultural Secretary</p>
+            <span class="entry-when">May, 2022 — April, 2023</span>
+          </div>
 
-          <div class="visual-rail">
-            <div class="slot" style="aspect-ratio: 4/3;">
-              <div class="slot-body">
-                <span class="slot-kind" data-kind="PHOTO">Photo</span>
-                <span class="slot-name">IITGN Welfare Council / Convocation 2022</span>
-                <span class="slot-aspect">4 : 3 · group / event</span>
-              </div>
+          <div class="split">
+            <ul class="bullets">
+              <li><span class="nd"></span><span class="tx">Represented a <strong><span class="cnt">3,600+</span> student community</strong> on institute decisions spanning food services, laundry, healthcare, commercial establishments, hostels and student affairs — coordinating with administration, external vendors, and a <span class="cnt">25</span>-member council as the sole bridge between students and the institute.</span></li>
+              <li><span class="nd"></span><span class="tx">Student representative in <strong>procurement and tender evaluations</strong> for campus mess and laundry contracts — conducted operational due diligence across vendor facilities in Gujarat, Rajasthan and Delhi before contributing to institute-wide provider selection.</span></li>
+              <li><span class="nd"></span><span class="tx"><em>Designed a trial-based vendor selection system</em> via the Commercial Establishment &amp; Management Committee — engaged <span class="cnt">20+</span> national chains and regional players, ran live campus trials, and onboarded outlets on demonstrated performance rather than lowest-cost bids.</span></li>
+              <li><span class="nd"></span><span class="tx">Owned planning and governance of student initiatives with cumulative budgets exceeding <strong><span class="cnt">₹80+ lakh</span></strong> as a student signing authority; led Convocation 2022 through a <span class="cnt">68</span>-member team and IITGN's <span class="cnt">104</span>-member Inter-IIT Cultural Meet contingent end-to-end.</span></li>
+            </ul>
+
+            <div class="visual-rail">
+              <PorPhotoWall :photos="POR_WALL_PHOTOS" label="Photo wall — Student Council, IIT Gandhinagar" />
             </div>
           </div>
-        </div>
-      </article>
+        </article>
 
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Coordinator for Commercial Outlets</p>
-          <span class="entry-when">May, 2021 — April, 2022</span>
-        </div>
-        <p class="entry-sub"><span>Welfare Council, IIT Gandhinagar</span></p>
+        <article class="entry">
+          <span class="bix"><i></i>Welfare Council, IIT Gandhinagar</span>
+          <div class="entry-head">
+            <p class="entry-title">Coordinator for Commercial Outlets</p>
+            <span class="entry-when">May, 2021 — April, 2022</span>
+          </div>
 
-        <ul class="bullets">
-          <li>Identified and assessed <strong>20+ vendor operators</strong> across food and service categories through independent on-ground outreach and capability assessments spanning national chains and regional operators.</li>
-          <li>Designed and implemented a <em>data-driven vendor evaluation framework</em> — ran multiple 1–2 day campus trials and collected structured community feedback to replace ad-hoc vendor selection with an evidence-based process.</li>
-          <li>Onboarded and launched <strong>6 food and service outlets</strong> serving a 3,600+ student community — managing end-to-end negotiations, approvals, scheduling, and operational go-live.</li>
-          <li>Hosted an institute-wide ice cream social for <strong>4,500+ students, faculty, staff and service personnel</strong> — from vendor selection and procurement to on-ground execution.</li>
-          <li>Led multiple blood donation drives with GCRI and Ahmedabad Civil Hospital — coordinated 400+ registrations via slot-based crowd management, the institute's highest post-pandemic collection.</li>
-        </ul>
-      </article>
+          <ul class="bullets">
+            <li><span class="nd"></span><span class="tx">Identified and assessed <strong><span class="cnt">20+</span> vendor operators</strong> across food and service categories through independent on-ground outreach and capability assessments spanning national chains and regional operators.</span></li>
+            <li><span class="nd"></span><span class="tx">Designed and implemented a <em>data-driven vendor evaluation framework</em> — ran multiple 1–2 day campus trials and collected structured community feedback to replace ad-hoc vendor selection with an evidence-based process.</span></li>
+            <li><span class="nd"></span><span class="tx">Onboarded and launched <strong><span class="cnt">6</span> food and service outlets</strong> serving a <span class="cnt">3,600+</span> student community — managing end-to-end negotiations, approvals, scheduling, and operational go-live.</span></li>
+            <li><span class="nd"></span><span class="tx">Hosted an institute-wide ice cream social for <strong><span class="cnt">4,500+</span> students, faculty, staff and service personnel</strong> — from vendor selection and procurement to on-ground execution.</span></li>
+            <li><span class="nd"></span><span class="tx">Led multiple blood donation drives with GCRI and Ahmedabad Civil Hospital — coordinated <span class="cnt">400+</span> registrations via slot-based crowd management, the institute's highest post-pandemic collection.</span></li>
+          </ul>
+        </article>
 
-      <article class="entry">
-        <div class="entry-head">
-          <p class="entry-title">Co-Founder — Pegasus'20 (International Online Event)</p>
-          <span class="entry-when">September, 2020</span>
-        </div>
-        <p class="entry-sub"><span>Virtual Event during COVID-19</span></p>
+        <article class="entry">
+          <span class="bix"><i></i>Virtual Event during COVID-19</span>
+          <div class="entry-head">
+            <p class="entry-title">Co-Founder — Pegasus'20 (International Online Event)</p>
+            <span class="entry-when">September, 2020</span>
+          </div>
 
-        <ul class="bullets">
-          <li>Co-founded and delivered Pegasus'20 end-to-end during COVID with a 30-member team; secured 5 sponsors + 3 gifting partners, managed INR 58K prize pool, and closed at INR 52K profit.</li>
-        </ul>
-      </article>
+          <ul class="bullets">
+            <li><span class="nd"></span><span class="tx">Co-founded and delivered Pegasus'20 end-to-end during COVID with a <span class="cnt">30</span>-member team; secured 5 sponsors + 3 gifting partners, managed INR <span class="cnt">58K</span> prize pool, and closed at INR <span class="cnt">52K</span> profit.</span></li>
+          </ul>
+        </article>
+      </div>
     </section>
 
-    <!-- Other Extra-Curricular -->
-    <section id="extra" class="section">
+    <!-- Other Extra-Curricular — year clusters -->
+    <section id="extra" ref="extraSecRef" class="section" data-no-reveal>
       <span class="section-num">04.b · Other Extra-Curricular</span>
       <h2 class="section-title">Other<br /><span class="accent-line">Extra-Curricular</span></h2>
 
-      <ul class="bullets" style="margin-top: 0;">
-        <li>Events Coordinator — Amalthea '20, (Annual Technical Summit, IITGN) &nbsp;·&nbsp; <em style="background:none;color:var(--ink-soft);font-weight:500;">September, 2020 — May, 2021</em></li>
-        <li>Finance Coordinator — Events Team, Blithchron '21 (Annual Cultural Fest, IITGN) &nbsp;·&nbsp; <em style="background:none;color:var(--ink-soft);font-weight:500;">August, 2020 — February, 2021</em></li>
-        <li>Event Management Executive — Blithchron '20 (Annual Cultural Fest, IITGN) &nbsp;·&nbsp; <em style="background:none;color:var(--ink-soft);font-weight:500;">September, 2019 — February, 2020</em></li>
-        <li>Event Management Executive — Amalthea '19 (Annual Technical Summit, IITGN) &nbsp;·&nbsp; <em style="background:none;color:var(--ink-soft);font-weight:500;">August, 2019 — October, 2019</em></li>
-      </ul>
+      <div class="yrs">
+        <div class="yr-group">
+          <div class="yr-col">
+            <div class="yr" aria-label="2020"><span>2</span><span>0</span><span>2</span><span>0</span></div>
+          </div>
+          <div class="yr-roles">
+            <div class="yr-role"><p class="r">Events Coordinator <span class="o">— Amalthea '20 (Annual Technical Summit, IITGN)</span></p><span class="d">September, 2020 — May, 2021</span></div>
+            <div class="yr-role"><p class="r">Finance Coordinator, Events Team <span class="o">— Blithchron '21 (Annual Cultural Fest, IITGN)</span></p><span class="d">August, 2020 — February, 2021</span></div>
+          </div>
+        </div>
+
+        <div class="yr-group">
+          <div class="yr-col">
+            <div class="yr" aria-label="2019"><span>2</span><span>0</span><span>1</span><span>9</span></div>
+          </div>
+          <div class="yr-roles">
+            <div class="yr-role"><p class="r">Event Management Executive <span class="o">— Blithchron '20 (Annual Cultural Fest, IITGN)</span></p><span class="d">September, 2019 — February, 2020</span></div>
+            <div class="yr-role"><p class="r">Event Management Executive <span class="o">— Amalthea '19 (Annual Technical Summit, IITGN)</span></p><span class="d">August, 2019 — October, 2019</span></div>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <!-- Achievements & Recognition -->
-    <section id="awards" class="section">
-      <span class="section-num">05 · Achievements &amp; Recognition</span>
-      <h2 class="section-title">Achievements &amp;<br /><span class="accent-line">Recognition</span></h2>
+    <!-- Achievements & Recognition — pinned; scroll scrubs the medal
+         presentation to its end before the section releases -->
+    <section id="awards" ref="awRef" class="section" data-no-reveal data-medal-driver>
+      <div class="aw-stick">
+        <span class="section-num">05 · Achievements &amp; Recognition</span>
+        <h2 class="section-title">Achievements &amp;<br /><span class="accent-line">Recognition</span></h2>
 
-      <div class="split">
-        <ul class="bullets">
-          <li><strong>Gold Medalist — Outstanding Social Service (IITGN, Convocation 2023)</strong> — institute Gold Medal for contribution to student welfare, campus operations, and community leadership.</li>
-          <li><strong>ANCHORS ELITE (Q2 FY25)</strong> — selected among 51 employees across Axis Bank pan-India for exceptional impact and delivery.</li>
-          <li><strong>ANCHORS TEAM PLAYER (Q2 FY25)</strong> — awarded for high-ownership collaboration and cross-team execution under pressure.</li>
-          <li><strong>BIU Team Award</strong> — recognised for end-to-end delivery of the profit score automation program with TCS.</li>
-          <li><strong>Agile &amp; Jira adoption lead</strong> — part of a 6-member SWAT team driving Jira rollout and Agile project management adoption across the Data Science vertical and cross-functional teams.</li>
-          <li><strong>Dean's List</strong> — Semester 4, 2021; awarded to meritorious students.</li>
-          <li><strong>Winner — Rube Goldberg Machine Building Competition</strong> (Amalthea, IITGN, 2020) — 1st place for designing and executing a chain-reaction machine under competition constraints.</li>
-          <li>Top internal technical assessments — L3 in SQL and PySpark (Q4 FY25); L2 in Functional Assessment.</li>
-          <li>Competitive sports medals in Rope Skipping — 3 Gold (State SGFI), 2 Silver (CBSE Nationals), selected for National RSFI championship.</li>
-        </ul>
+        <div class="split aw-split">
+          <div class="aw-list">
+            <div class="aw-beam" aria-hidden="true"><i></i><b></b></div>
+            <ul class="bullets aw-bullets">
+              <li><strong><em>Gold Medalist — Outstanding Social Service (IITGN, Convocation 2023)</em></strong> — institute Gold Medal for contribution to student welfare, campus operations, and community leadership.</li>
+              <li><strong>Anchors Elite (Q2 FY25)</strong> — selected among 51 employees across Axis Bank pan-India for exceptional impact and delivery.</li>
+              <li><strong>Anchors Team Player (Q2 FY25)</strong> — awarded for high-ownership collaboration and cross-team execution under pressure.</li>
+              <li><strong>BIU Team Award</strong> — recognised for end-to-end delivery of the profit score automation program with TCS.</li>
+              <li><strong>Agile &amp; Jira adoption lead</strong> — part of a 6-member SWAT team driving Jira rollout and Agile project management adoption across the Data Science vertical and cross-functional teams.</li>
+              <li><strong>Dean's List</strong> — Semester 4, 2021; awarded to meritorious students.</li>
+              <li><strong>Winner — Rube Goldberg Machine Building Competition</strong> (Amalthea, IITGN, 2020) — 1st place for designing and executing a chain-reaction machine under competition constraints.</li>
+              <li>Top internal technical assessments — L3 in SQL and PySpark (Q4 FY25); L2 in Functional Assessment.</li>
+              <li>Competitive sports medals in Rope Skipping — 3 Gold (State SGFI), 2 Silver (CBSE Nationals), selected for National RSFI championship.</li>
+            </ul>
+          </div>
 
-        <div class="visual-rail">
-          <div class="slot accent" style="aspect-ratio: 1/1;">
-            <div class="slot-body">
-              <span class="slot-kind" data-kind="3D">3D</span>
-              <span class="slot-name">Gold medal — Outstanding Social Service</span>
-              <span class="slot-aspect">1 : 1 · rotating medallion</span>
-            </div>
-          </div>
-          <div class="slot" style="aspect-ratio: 4/3;">
-            <div class="slot-body">
-              <span class="slot-kind" data-kind="3D">3D</span>
-              <span class="slot-name">Medals stack — SGFI / CBSE / RSFI</span>
-              <span class="slot-aspect">4 : 3 · stacked grouping</span>
-            </div>
-          </div>
-          <div class="slot dark" style="aspect-ratio: 4/3;">
-            <div class="slot-body">
-              <span class="slot-kind" data-kind="ANIM">Animation</span>
-              <span class="slot-name">Rube Goldberg machine — chain reaction loop</span>
-              <span class="slot-aspect">4 : 3 · looping motion</span>
-            </div>
+          <div class="visual-rail">
+            <MedalScrub />
           </div>
         </div>
       </div>
@@ -1861,6 +2286,9 @@ main > section.section {
 .im-signature {
   position: absolute;
   inset: 0;
+  /* Manual size knob — scales the whole signature reveal. 1 = original,
+     smaller < 1. Tweak this one value only. */
+  --sig-scale: 0.92;
   /* Sits above .hs-page1 (z:5) so the stroke is visible while page-1
      collapses into the slot underneath. */
   z-index: 6;
@@ -1873,7 +2301,7 @@ main > section.section {
   pointer-events: none;
 }
 .im-signature :deep(svg) {
-  width: clamp(260px, 28vw, 460px);
+  width: calc(clamp(260px, 28vw, 460px) * var(--sig-scale));
   height: auto;
   overflow: visible;
   /* Subtle neon-marker glow — restrained inner halo, no wide bleed. */
@@ -1901,7 +2329,7 @@ main > section.section {
     padding-top: clamp(1.5rem, 6vh, 4rem);
   }
   .im-signature :deep(svg) {
-    width: clamp(180px, 55vw, 260px);
+    width: calc(clamp(180px, 55vw, 260px) * var(--sig-scale));
   }
 }
 
@@ -2108,6 +2536,24 @@ main > section.section {
 }
 @media (prefers-reduced-motion: reduce) {
   .hs-sticky .cr-hint, .hs-sticky .cr-hint-dot { animation: none; }
+}
+/* Touch devices have no cursor to move — the hint is wrong copy there, and
+   on phone widths it collides with the headline. Head-follow still works
+   via touch-drag; the stage just doesn't advertise it with cursor copy. */
+@media (hover: none) {
+  .hs-sticky .cr-hint { display: none; }
+}
+/* Narrow viewports: the two-column bottom row (headline 1fr | meta auto)
+   runs out of room — the meta stack lands on top of the headline's last
+   line. Stack them instead. */
+@media (max-width: 720px) {
+  .hs-sticky .cr-bottom {
+    grid-template-columns: 1fr;
+    justify-items: start;
+    gap: 1.1rem;
+  }
+  .hs-sticky .cr-meta-stack { align-items: flex-start; }
+  .hs-sticky .cr-meta { text-align: left; }
 }
 
 /* ────────────────────────────────────────────────────────────
@@ -2324,10 +2770,13 @@ main > section.section {
 
 /* ─── summary — pinned character stage ───
    Staged (desktop, motion OK): section grows to 240vh, inner pin holds one
-   viewport. --push (0..1, scroll-scrubbed) drives the push-out: the body
-   text slides off the left edge while the character follows it, playing
-   the pushing clip. Non-staged: plain stacked flow, character below text. */
-#summary { --sum-appr: 0; --sum-exit: 0; }
+   viewport. JS publishes smoothed scroll-scrub vars:
+     --sum-appr    0..1  walk-in phase (fades the actions + ghost numeral)
+     --sum-exit    0..1  shove phase (text lean + ground-line fade)
+     --sum-body-x  px    text column travel — measured to clear the viewport
+     --sum-char-x  px    character travel — contact-locked to the text
+   Non-staged: plain stacked flow, character below text. */
+#summary { --sum-appr: 0; --sum-exit: 0; --sum-body-x: 0px; --sum-char-x: 0px; }
 #summary.sum-staged { height: 240vh; padding: 0; }
 #summary .summary-pin { min-height: 0; }
 #summary.sum-staged .summary-pin {
@@ -2341,32 +2790,48 @@ main > section.section {
 }
 #summary .summary-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-  gap: clamp(2rem, 4vw, 4.5rem);
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+  gap: clamp(2rem, 4vw, 4rem);
   align-items: center;
   width: 100%;
 }
 /* minmax(0,1fr), not bare 1fr: a 1fr track's min is auto, so wide children
    blow the track past the viewport on phones. minmax(0,1fr) compresses. */
 @media (max-width: 980px) { #summary .summary-grid { grid-template-columns: minmax(0, 1fr); } }
-/* Staged pin: TOP-align the text column, same rhythm as every other
-   section. Centering it floats the title mid-air on tall screens and —
-   worse — clips it top AND bottom on short ones (centered overflow inside
-   the pin's overflow:hidden). */
-#summary.sum-staged .summary-grid { align-items: start; }
-#summary.sum-staged .body { padding-top: 0; }
-/* The pin can't grow, so trim the title's air (not its size — the type
-   must read identical to the flowing layout) to fit all four paragraphs. */
-#summary.sum-staged .section-title { margin-bottom: clamp(1rem, 2.4vh, 1.6rem); }
-#summary .body p {
-  font: 400 clamp(1.05rem, 1.3vw, 1.18rem)/1.65 var(--f-sans);
-  color: var(--ink);
-  max-width: 60ch;
-  text-wrap: pretty;
-  margin-bottom: 1.25rem;
+/* Staged pin: stretch both tracks to the pin height and center the text
+   inside its track — the two columns read as one balanced composition
+   instead of text crammed against the pin's top edge. Short viewports get
+   a tighter type scale below so centering never clips inside the pin's
+   overflow:hidden. */
+#summary.sum-staged .summary-grid { align-items: stretch; height: 100%; }
+#summary.sum-staged .body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+  padding-top: 0;
 }
+/* Pinned stage caps the display type a step below the scroll-header scale —
+   the title shares the viewport with four paragraphs and the character. */
+#summary.sum-staged .section-title {
+  font-size: clamp(2.4rem, 4.8vw, 4.2rem);
+  margin-bottom: clamp(1rem, 2.6vh, 1.8rem);
+}
+#summary .body p {
+  font: 400 clamp(1rem, 1.18vw, 1.14rem)/1.62 var(--f-sans);
+  color: var(--ink);
+  max-width: 58ch;
+  text-wrap: pretty;
+  margin-bottom: 1.15rem;
+}
+#summary .body p:last-child { margin-bottom: 0; }
 #summary .body p strong { color: var(--ink); font-weight: 600; }
 #summary .body p em { font-style: normal; background: var(--accent); color: var(--accent-ink); padding: 0 0.16em; }
+/* Short pins: shave the type before it can clip inside overflow:hidden. */
+@media (max-height: 840px) {
+  #summary.sum-staged .section-title { font-size: clamp(2.1rem, 4.2vw, 3.4rem); margin-bottom: 1rem; }
+  #summary.sum-staged .body p { font-size: clamp(0.92rem, 1.05vw, 1.02rem); line-height: 1.52; margin-bottom: 0.85rem; }
+}
 #summary .summary-char {
   height: min(72vh, 640px);
   min-height: 360px;
@@ -2379,33 +2844,67 @@ main > section.section {
   min-height: 0;
 }
 #summary.sum-staged .summary-char {
-  height: calc(100vh - var(--topbar-h, 56px) - clamp(3rem, 8vh, 5.5rem));
+  height: auto;
   min-height: 0;
 }
-/* Push-out — contact-locked, scrubbed, no transitions.
-   Phase 1 (--sum-appr 0→1): he walks from his slot to the text block.
-   Phase 2 (--sum-exit 0→1): character and text travel off the left edge
-   TOGETHER at the same speed — a shove, not two things sliding apart.
-   The text leans back a touch as it goes, like it took the hit. */
+/* Set dressing for the character column: an oversized ghost index numeral
+   behind the canvas and a ground hairline under his feet. Both counter-
+   translate against the column's push travel — the set stays put while he
+   walks off it — and fade as their phase proceeds. */
+#summary.sum-staged .char-slot::before {
+  content: '00';
+  position: absolute;
+  top: 0;
+  right: 4%;
+  font: 900 clamp(8rem, 12vw, 13rem)/0.8 var(--f-sans);
+  letter-spacing: -0.06em;
+  color: rgba(9, 9, 11, 0.05);
+  transform: translateX(calc(-1 * var(--sum-char-x, 0px)));
+  opacity: calc(1 - var(--sum-appr, 0));
+  pointer-events: none;
+  user-select: none;
+}
+#summary.sum-staged .char-slot::after {
+  content: '';
+  position: absolute;
+  left: -8%;
+  right: -8%;
+  bottom: 10%;
+  height: 1px;
+  background: var(--rule);
+  transform: translateX(calc(-1 * var(--sum-char-x, 0px)));
+  opacity: calc(1 - var(--sum-exit, 0));
+  pointer-events: none;
+}
+/* Canvas above the set dressing. */
+#summary .char-slot :deep(.sc-wrap) {
+  position: relative;
+  z-index: 1;
+}
+/* Push-out — contact-locked, scrubbed, smoothed in JS (no CSS transitions:
+   reverse scroll must retrace the exact same path). Phase 1 walks him to
+   the text (--sum-char-x only), phase 2 carries text + character off the
+   left edge together at the same speed — a shove, not two things sliding
+   apart. The text leans back a touch as it goes, like it took the hit.
+   Distances are measured px, so at exit=1 both columns fully clear the
+   viewport before the pin releases. */
 #summary.sum-staged .body {
   transform:
-    translate3d(calc(var(--sum-exit, 0) * -68vw), 0, 0)
+    translate3d(var(--sum-body-x, 0px), 0, 0)
     rotate(calc(var(--sum-exit, 0) * -1.5deg));
   transform-origin: 100% 65%;
   will-change: transform;
 }
-/* -68vw clears the text's right edge (~55vw) and the character's own body
-   exactly at exit=1 — he stays on screen pushing until the very end
-   instead of vanishing halfway through the scrub. */
 #summary.sum-staged .summary-char {
-  transform: translate3d(calc(var(--sum-appr, 0) * -11vw + var(--sum-exit, 0) * -68vw), 0, 0);
+  transform: translate3d(var(--sum-char-x, 0px), 0, 0);
   will-change: transform;
 }
-/* Action buttons — icon circles with tiny mono labels. Rise in once the
-   character has landed; fade as the push-out begins. */
+/* Action buttons — icon circles with tiny mono labels under a mono hint.
+   Rise in once the character has landed; fade as the walk-in begins. */
 #summary .summary-actions {
   flex: 0 0 auto;
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: clamp(1rem, 1.8vw, 1.7rem);
   padding-top: clamp(0.7rem, 1.6vh, 1.2rem);
@@ -2418,6 +2917,15 @@ main > section.section {
   opacity: calc(1 - var(--sum-appr, 0));
   transform: none;
   pointer-events: auto;
+}
+.sum-act-hint {
+  flex: 1 1 100%;
+  text-align: center;
+  font: 500 0.6rem/1 var(--f-mono);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 0.35rem;
 }
 .sum-act {
   appearance: none;
@@ -2487,6 +2995,263 @@ main > section.section {
 }
 @media (max-width: 980px) {
   .split .visual-rail { position: static; }
+}
+
+/* ─── PoR "Rail" treatment (design handoff) ───
+   A 2px vertical rail whose fill is scroll-scrubbed (72%-viewport playhead,
+   see setupPorRail). Entries + bullet node-dots ignite as the fill passes. */
+#por .rail-wrap {
+  position: relative;
+  --railpad: clamp(2.4rem, 4.5vw, 3.4rem);
+  padding-left: var(--railpad);
+}
+#por .rail {
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--ink-trace);
+}
+#por .rail-tip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--ink);
+}
+#por .rail-tip::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 11px;
+  height: 11px;
+  background: var(--accent);
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  transform: translate(-50%, 50%);
+}
+
+#por .bix {
+  display: block;
+  font: 500 0.66rem/1 var(--f-mono);
+  letter-spacing: 0.18em;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  margin-bottom: 0.55rem;
+  transition: color 0.3s ease;
+}
+#por .entry.on .bix { color: var(--ink); }
+#por .bix i {
+  font-style: normal;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: var(--paper);
+  border: 1.5px solid var(--ink-faint);
+  margin-right: 0.5rem;
+  vertical-align: baseline;
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+#por .entry.on .bix i {
+  background: var(--accent);
+  border-color: var(--ink);
+}
+
+/* bullet node dots sit on the rail, outside the padded gutter */
+#por .nd {
+  position: absolute;
+  left: calc(7px - var(--railpad));
+  top: 0.34em;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 1.5px solid var(--ink-faint);
+  transform: translateX(-50%);
+  transition: background 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+}
+#por .nd.lit {
+  background: var(--accent);
+  border-color: var(--ink);
+  transform: translateX(-50%) scale(1.3);
+}
+#por .bullets li .tx { display: inline-block; }
+
+/* handoff spec: tighter gap than the site-wide .split, photo wall scrolls
+   with the entry (not sticky), and the two columns hold until 720px */
+#por .split {
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: clamp(1.5rem, 4vw, 3rem);
+}
+#por .split .visual-rail {
+  position: static;
+  display: block;
+}
+@media (max-width: 720px) {
+  #por .split { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ─── Other Extra-Curricular — year clusters ─── */
+#extra .yrs {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2.25rem, 5vh, 3.5rem);
+}
+#extra .yr-group {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 11rem) minmax(0, 1fr);
+  gap: clamp(1.5rem, 4vw, 3rem);
+  padding-top: 1.5rem;
+  position: relative;
+}
+#extra .yr-group::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--ink);
+  transform-origin: left center;
+}
+#extra .yr {
+  overflow: hidden;
+  white-space: nowrap;
+  width: max-content;
+  max-width: none;
+  font: 900 clamp(2.8rem, 6.5vw, 4.8rem)/1 var(--f-sans);
+  letter-spacing: -0.04em;
+  color: transparent;
+  -webkit-text-stroke: 1.5px rgba(9, 9, 11, 0.42);
+}
+#extra .yr span { display: inline-block; }
+#extra .yr-role {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1.25rem;
+  padding: 0.95rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+#extra .yr-role:first-child { padding-top: 0.1rem; }
+#extra .yr-role .r {
+  font: 600 0.95rem/1.5 var(--f-sans);
+  letter-spacing: -0.005em;
+  color: var(--ink);
+}
+#extra .yr-role .r .o {
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+#extra .yr-role .d {
+  font: 500 0.72rem/1.5 var(--f-mono);
+  color: var(--ink-faint);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  #extra .yr-group { grid-template-columns: 1fr; gap: 0.75rem; }
+  #extra .yr-role { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+}
+
+/* motion: hidden pre-states only when setupPorRail mounted (.anim) + motion
+   allowed, so reduced-motion and print render fully static */
+@media (prefers-reduced-motion: no-preference) {
+  .anim .section-num,
+  .anim .section-title {
+    opacity: 0;
+    transform: translateY(26px);
+    transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1), transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .anim .section-num.on,
+  .anim .section-title.on {
+    opacity: 1;
+    transform: none;
+  }
+
+  #por.anim .rail-tip { height: 0; }
+  #por.anim .entry-title {
+    opacity: 0;
+    transform: translateX(-22px);
+    transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1), transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #por.anim .entry.on .entry-title {
+    opacity: 1;
+    transform: none;
+  }
+  #por.anim .entry-when {
+    opacity: 0;
+    transition: opacity 0.6s ease 0.25s;
+  }
+  #por.anim .entry.on .entry-when { opacity: 1; }
+  #por.anim .visual-rail {
+    opacity: 0;
+    transform: translateY(22px);
+    transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.3s, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.3s;
+  }
+  #por.anim .entry.on .visual-rail {
+    opacity: 1;
+    transform: none;
+  }
+  #por.anim .bullets li .tx {
+    clip-path: inset(-4% 102% -8% -2%);
+    transition: clip-path 0.65s cubic-bezier(0.22, 1, 0.36, 1) 0.05s;
+  }
+  #por.anim .bullets li.on .tx { clip-path: inset(-4% -3% -8% -2%); }
+  #por.anim .nd.lit { animation: porNdPop 0.4s cubic-bezier(0.2, 1.4, 0.3, 1); }
+
+  #extra.anim .yr-group::before {
+    transform: scaleX(0);
+    transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #extra.anim .yr-group.on::before { transform: scaleX(1); }
+  #extra.anim .yr span {
+    transform: translateY(112%);
+    transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #extra.anim .yr span:nth-child(2) { transition-delay: 0.07s; }
+  #extra.anim .yr span:nth-child(3) { transition-delay: 0.14s; }
+  #extra.anim .yr span:nth-child(4) { transition-delay: 0.21s; }
+  #extra.anim .yr-group.on .yr span { transform: none; }
+  #extra.anim .yr-role {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1), transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #extra.anim .yr-role:nth-child(1) { transition-delay: 0.2s; }
+  #extra.anim .yr-role:nth-child(2) { transition-delay: 0.34s; }
+  #extra.anim .yr-group.on .yr-role {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes porNdPop {
+  0% { transform: translateX(-50%) scale(0.6); }
+  60% { transform: translateX(-50%) scale(1.55); }
+  100% { transform: translateX(-50%) scale(1.3); }
+}
+
+@media print {
+  #por .section-title,
+  #por .tx,
+  #por .entry-when,
+  #por .entry-title,
+  #por .visual-rail,
+  #extra .section-title,
+  #extra .yr span,
+  #extra .yr-role {
+    opacity: 1 !important;
+    transform: none !important;
+    clip-path: none !important;
+    animation: none !important;
+  }
+  #por .rail-tip { height: 100% !important; }
+  #extra .yr-group::before { transform: none !important; }
 }
 
 /* education tagline strip */
@@ -3054,15 +3819,6 @@ main > section.section {
   background: var(--accent);
   outline: 1px solid var(--ink-trace);
 }
-#experience .xp-slot {
-  flex: 1 1 auto;
-  min-height: clamp(96px, 14vh, 220px);
-  width: 100%;
-  aspect-ratio: auto;
-  max-height: none;
-  padding: 0.75rem;
-  background: var(--paper);
-}
 @media (max-width: 480px) {
   #experience .xp-stats { grid-template-columns: 1fr; }
 }
@@ -3129,22 +3885,137 @@ main > section.section {
   padding-right: clamp(3rem, 5vw, 4.5rem);
 }
 #experience:not(.xp-staged) .xp-datelines { max-width: 620px; }
-#experience:not(.xp-staged) .xp-slot {
-  flex: 0 0 auto;
-  aspect-ratio: 16 / 9;
-  max-height: none;
-  min-height: 200px;
-  max-width: 620px;
-}
 #experience:not(.xp-staged) .xp-stats { max-width: 620px; }
 
-/* short viewports while pinned: shed the slot (then summary) so the
-   panel always fits inside the 100vh pin without clipping */
-@media (max-height: 760px) {
-  #experience.xp-staged .xp-slot { display: none; }
-}
+/* short viewports while pinned: shed the summary so the panel always
+   fits inside the 100vh pin without clipping */
 @media (max-height: 620px) {
   #experience.xp-staged .xp-summary { display: none; }
+}
+
+/* ════════════════════════════════════════════════════════════
+   ACHIEVEMENTS — pinned medal scrub
+   Section pins for ~1.8 viewports; scroll drives the medal frame
+   sequence to its end while a beam traces down the list and lights
+   each recognition row (tracing-beam / spotlight treatments adapted
+   from 21st.dev to the blueprint design language).
+   ════════════════════════════════════════════════════════════ */
+#awards.aw-staged { height: 280vh; padding: 0; }
+#awards .aw-stick { display: flex; flex-direction: column; min-height: 0; }
+#awards.aw-staged .aw-stick {
+  position: sticky;
+  top: var(--topbar-h, 56px);
+  height: calc(100vh - var(--topbar-h, 56px));
+  padding: clamp(1.25rem, 3.5vh, 2.5rem) var(--gutter-x) clamp(1rem, 3vh, 2rem);
+  justify-content: center;
+  overflow: hidden;
+}
+/* pinned stack must fit 100vh — trade display size for fit, both axes */
+#awards.aw-staged .section-num { position: static; }
+#awards.aw-staged .section-title {
+  font-size: clamp(1.7rem, min(4.5vw, 5.4vh), 3.6rem);
+  margin-bottom: clamp(1.2rem, 3.5vh, 2.4rem);
+}
+#awards.aw-staged .aw-split { align-items: center; }
+#awards.aw-staged .visual-rail { position: static; }
+/* :deep — .medal-scrub lives inside the MedalScrub child component */
+#awards.aw-staged .visual-rail :deep(.medal-scrub) { max-height: min(64vh, 560px); }
+@media (max-height: 820px) {
+  #awards.aw-staged .aw-bullets { gap: 0.4rem; }
+  #awards.aw-staged .aw-bullets li { font-size: 0.88rem; line-height: 1.45; }
+}
+
+/* beam rail — a thin track beside the list; the lime fill grows with the
+   pin progress (--awp) and a head dot rides its tip */
+#awards .aw-list { position: relative; }
+#awards.aw-staged .aw-list { padding-left: clamp(1.2rem, 1.8vw, 1.75rem); }
+#awards .aw-beam { display: none; }
+#awards.aw-staged .aw-beam {
+  display: block;
+  position: absolute;
+  left: 0;
+  top: 0.4em;
+  bottom: 0.4em;
+  width: 2px;
+}
+#awards.aw-staged .aw-beam::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 1px;
+  background: var(--ink-trace);
+}
+#awards.aw-staged .aw-beam i {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(219, 254, 82, 0) 0%,
+    rgba(219, 254, 82, 0.85) 22%,
+    var(--accent) 100%
+  );
+  transform: scaleY(var(--awp, 0));
+  transform-origin: top;
+}
+/* head dot rides the beam tip — the full-height carrier translates by its
+   own height (transform, not `top`, so no per-frame layout) and the dot
+   sits at its bottom end */
+#awards.aw-staged .aw-beam b {
+  position: absolute;
+  inset: 0;
+  transform: translateY(calc((var(--awp, 0) - 1) * 100%));
+}
+#awards.aw-staged .aw-beam b::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 9px;
+  height: 9px;
+  transform: translate(-50%, 50%);
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1px solid var(--ink);
+  box-shadow: 0 0 12px 2px rgba(219, 254, 82, 0.75);
+}
+
+/* rows light as the beam passes — de-emphasised (but still legible)
+   until then */
+#awards.aw-staged .aw-bullets li {
+  opacity: 0.42;
+  transition: opacity 0.45s ease;
+}
+#awards.aw-staged .aw-bullets li.is-lit { opacity: 1; }
+#awards .aw-bullets li::before {
+  transition: background-color 0.45s ease, width 0.45s ease;
+}
+#awards.aw-staged .aw-bullets li.is-lit::before {
+  background: var(--ink);
+  width: 20px;
+}
+
+/* pinned-section entrances — mirror the shared reveals */
+@media (prefers-reduced-motion: no-preference) {
+  #awards.aw-staged .section-num,
+  #awards.aw-staged .section-title {
+    opacity: 0;
+    transform: translateX(-44px);
+    transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #awards.aw-staged .section-title { transition-delay: 0.08s; }
+  #awards.aw-staged .visual-rail {
+    opacity: 0;
+    transform: translateX(44px);
+    transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.1s,
+                transform 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.1s;
+  }
+  #awards.aw-staged.head-in .section-num,
+  #awards.aw-staged.head-in .section-title,
+  #awards.aw-staged.head-in .visual-rail {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* ════════════════════════════════════════════════════════════

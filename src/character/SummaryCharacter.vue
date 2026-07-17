@@ -21,7 +21,11 @@ import "./CharacterModel.css";
  *               scrolls in ("he jumped down here from the stage").
  *   actions   · buttons below the character (one-shot, then back to idle).
  *   pushing   · pushing.glb  — looping while setPushing(true); drives the
- *               summary→education push-out transition.
+ *               summary→education push-out transition. Scroll-scrubbed:
+ *               the page reports absolute travel px via setPushTravel(px)
+ *               and the clip's playhead is a pure function of it, so the
+ *               stride is frame-locked to the columns at any scroll speed
+ *               — frozen when the scroll stops, reversed on a retrace.
  */
 
 interface Props {
@@ -55,10 +59,16 @@ let cleanup: (() => void) | null = null;
 // Exposed API — assigned inside onMounted once the scene exists.
 let enterImpl: () => void = () => {};
 let setPushingImpl: (on: boolean) => void = () => {};
+let setPushTravelImpl: (px: number) => void = () => {};
 let playActionImpl: (name: string) => void = () => {};
 defineExpose({
   enter: () => enterImpl(),
   setPushing: (on: boolean) => setPushingImpl(on),
+  /** Absolute push-out travel in px since the runway start. The pushing
+   *  clip's playhead is mapped straight onto it (a scrub, not a speed), so
+   *  legs stride exactly with the columns, freeze the instant the scroll
+   *  stops, and stride backwards on a retrace. */
+  setPushTravel: (px: number) => setPushTravelImpl(px),
   playAction: (name: string) => playActionImpl(name),
 });
 
@@ -197,19 +207,25 @@ onMounted(() => {
     crossfadeTo(action, 0.3);
   }
 
-  // The push loop only advances while the user actually scrolls: the page
-  // travel is scroll-scrubbed, so a frozen page with pumping legs reads
-  // broken. animate() lerps the action's timeScale toward 1 while scroll
-  // events are fresh and toward 0 once they stop — he leans into the text,
-  // mid-stride, waiting for the next wheel notch.
+  // Scroll-scrubbed stride: the parent reports the push-out's absolute
+  // travel in px, and the clip's playhead is a pure function of it —
+  // PUSH_PX_PER_SEC px of column travel advances the clip by one second of
+  // its 1× timeline (wrapping over the loop). No playback clock at all:
+  // scroll fast = fast strides, stop = frozen mid-stride, retrace = strides
+  // in reverse. Legs and columns can never drift apart.
+  const PUSH_PX_PER_SEC = 520; // column px per second of clip time — sets stride length
   let pushAction: THREE.AnimationAction | null = null;
-  let lastScrollTs = 0;
-  const onScrollTick = () => {
-    lastScrollTs = performance.now();
+  let pushTravel = 0;
+  setPushTravelImpl = (px: number) => {
+    pushTravel = px;
   };
-  window.addEventListener("scroll", onScrollTick, { passive: true });
 
+  // The parent can request the pushing pose before the model has streamed in
+  // (fast scroll straight to the exit runway on a cold cache) — remember the
+  // wish and apply it as soon as the mixer exists.
+  let wantPushing = false;
   setPushingImpl = async (on: boolean) => {
+    wantPushing = on;
     if (!mixer || pushing.value === on) return;
     pushing.value = on;
     targetYaw = on ? PUSH_YAW : IDLE_YAW;
@@ -221,12 +237,14 @@ onMounted(() => {
       busy.value = false;
       const action = mixer.clipAction(clip);
       action.setLoop(THREE.LoopRepeat, Infinity);
-      action.timeScale = 1;
-      lastScrollTs = performance.now();
+      // timeScale stays 0 for the clip's whole life — animate() scrubs the
+      // playhead from the reported travel instead. Crossfade weights ride
+      // mixer time, so the fade-in still plays over a frozen pose.
+      action.timeScale = 0;
       pushAction = action;
       crossfadeTo(action, 0.3);
     } else {
-      if (pushAction) pushAction.timeScale = 1;
+      pushTravel = 0;
       pushAction = null;
       backToIdle(0.4);
     }
@@ -316,7 +334,13 @@ onMounted(() => {
     light.turnOnLights();
     ready.value = true;
     emit("loaded");
-    if (pendingEnter) {
+    // Push requested while the model was still streaming in — honor it now
+    // (takes precedence over the queued entrance jump).
+    if (wantPushing && !pushing.value) {
+      pendingEnter = false;
+      entered = true;
+      void setPushingImpl(true);
+    } else if (pendingEnter) {
       pendingEnter = false;
       entered = true;
       void playOnce("jump");
@@ -334,24 +358,37 @@ onMounted(() => {
     }
   });
 
+  // Out of the viewport = fully asleep: no mixer stepping, no head-follow,
+  // no render — the loop stops re-arming and the IntersectionObserver
+  // restarts it on re-entry. getDelta() on wake swallows the sleep gap so
+  // the clip resumes exactly where it froze instead of jumping ahead.
   let inViewport = true;
   const visObs = new IntersectionObserver((entries) => {
-    inViewport = entries.some((e) => e.isIntersecting);
+    const vis = entries.some((e) => e.isIntersecting);
+    if (vis === inViewport) return;
+    inViewport = vis;
+    if (vis && rafId === 0) {
+      clock.getDelta();
+      rafId = requestAnimationFrame(animate);
+    }
   });
   visObs.observe(container);
 
   const animate = () => {
+    if (!inViewport) {
+      rafId = 0;
+      return;
+    }
     rafId = requestAnimationFrame(animate);
-    const delta = clock.getDelta();
+    // Cap the step so a background-tab pause can't fast-forward the rig.
+    const delta = Math.min(clock.getDelta(), 0.066);
     if (pushing.value && pushAction) {
-      // Fresh scroll events → play; idle → freeze. Crossfade weights ride
-      // mixer time, not action time, so a frozen clip still fades in clean.
-      const active = performance.now() - lastScrollTs < 180;
-      pushAction.timeScale = THREE.MathUtils.lerp(
-        pushAction.timeScale,
-        active ? 1 : 0,
-        active ? 0.3 : 0.16
-      );
+      // Scrub: playhead is a pure function of the reported travel, wrapped
+      // over the loop. timeScale is 0, so mixer.update never advances it —
+      // it only drives the crossfade weights.
+      const dur = pushAction.getClip().duration;
+      const t = (pushTravel / PUSH_PX_PER_SEC) % dur;
+      pushAction.time = t < 0 ? t + dur : t;
     }
     if (mixer) mixer.update(delta);
     if (charRoot && Math.abs(charRoot.rotation.y - targetYaw) > 0.001) {
@@ -360,7 +397,7 @@ onMounted(() => {
     if (headBone && headFollow) {
       handleHeadRotation(headBone, mouse.x, mouse.y, 0.1, 0.2, THREE.MathUtils.lerp);
     }
-    if (!props.paused && inViewport) {
+    if (!props.paused) {
       renderer.render(scene, camera);
     }
   };
@@ -371,7 +408,6 @@ onMounted(() => {
     visObs.disconnect();
     document.removeEventListener("mousemove", onMouseMove);
     window.removeEventListener("resize", onResize);
-    window.removeEventListener("scroll", onScrollTick);
     disposeCharacter();
     light.dispose();
     scene.traverse((obj) => {

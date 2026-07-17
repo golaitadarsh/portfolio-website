@@ -30,7 +30,11 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   simResolution: 128,
-  dyeResolution: 1440,
+  // 1024 not 1440: the dye is a soft trail fully dissipated in ~1s
+  // (DENSITY_DISSIPATION 3.5), so the higher grid is imperceptible in motion
+  // while costing ~2x the fill/bandwidth of the site's most expensive
+  // always-on overlay. Raise it back if you want a crisper trail.
+  dyeResolution: 1024,
   captureResolution: 512,
   densityDissipation: 3.5,
   velocityDissipation: 2,
@@ -83,6 +87,11 @@ let disposeSim: (() => void) | null = null;
 onMounted(() => {
   const canvas = canvasRef.value;
   if (!canvas) return;
+
+  // Reduced motion: the fluid cursor is pure decoration on top of the whole
+  // page. Skip the sim entirely — no WebGL context, no listeners, no rAF —
+  // both for accessibility and because it's the heaviest always-on overlay.
+  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
 
   // Pointer and config setup
   const pointers: Pointer[] = [pointerPrototype()];

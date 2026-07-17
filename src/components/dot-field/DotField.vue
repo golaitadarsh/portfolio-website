@@ -188,9 +188,22 @@ onMounted(() => {
   // position converges and every further render produces identical pixels —
   // skip them. The rAF tick itself stays alive; the per-frame comparison is
   // effectively free next to a full-screen 9-tap shader pass.
+  //
+  // Occlusion gate: the hero zoom fades this canvas to opacity 0 once the
+  // page scrolls (--hs-dot-fade on the parent), but the mousemove listener
+  // is window-level — without the gate, every pointer move for the rest of
+  // the session re-renders a full-screen shader nobody can see. The
+  // computed-style read is done on a coarse cadence; pending dirtiness is
+  // kept (not consumed) while occluded so the first visible frame is fresh.
   let needsRender = true
+  let paintVisible = true
+  let visCheck = 0
   function frame() {
     animId = requestAnimationFrame(frame)
+    if (++visCheck >= 15) {
+      visCheck = 0
+      paintVisible = +getComputedStyle(el).opacity > 0.01
+    }
     if (mouse.active) {
       smooth.x += (mouse.x - smooth.x) * 0.22
       smooth.y += (mouse.y - smooth.y) * 0.22
@@ -202,7 +215,7 @@ onMounted(() => {
       u.set(targetX, targetY)
       needsRender = true
     }
-    if (needsRender) {
+    if (needsRender && paintVisible) {
       needsRender = false
       renderer.render(scene, cam)
     }

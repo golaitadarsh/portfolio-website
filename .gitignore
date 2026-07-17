@@ -29,3 +29,15 @@ dist/
 .gstack/
 graphify-out/
 .vercel
+.code-review-graph/
+
+# source material / masters — kept on disk, never committed
+assets/POR photos/
+assets/*.webm
+assets/image.png
+assets/image1.png
+assets/image1_nobg.png
+assets/layered-photo old.webp
+assets/layered-photo old1.webp
+assets/projects/IMG_4992.HEIC
+assets/projects/XLHC1030.png

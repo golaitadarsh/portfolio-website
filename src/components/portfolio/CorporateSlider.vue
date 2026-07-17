@@ -12,6 +12,7 @@
    ============================================================ */
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import gsap from 'gsap'
+import smartokidsPrototypeImg from '../../../assets/projects/smartokids-prototype.jpg'
 
 interface MetricCard {
   kind: 'metric'
@@ -26,8 +27,8 @@ interface PhotoCard {
   kind: 'photo'
   label: string
   big: string
-  phKind: string
-  phName: string
+  img: string
+  alt: string
 }
 interface CorporateProject {
   id: string
@@ -145,8 +146,8 @@ const CORPORATE_PROJECTS: CorporateProject[] = [
       kind: 'photo',
       label: 'SmartoKids · Prototype',
       big: '10+ products',
-      phKind: 'PHOTO',
-      phName: 'SmartoKids prototype — CAD · laser · 3D print',
+      img: smartokidsPrototypeImg,
+      alt: 'SmartoKids production floor — stacks of laser-cut animal puzzle boards fresh off the die, with cut-sheet waste in the foreground',
     },
   },
 ]
@@ -306,10 +307,8 @@ onMounted(() => {
   function buildCard(p: CorporateProject) {
     const c = el('div', 'cs-card' + (p.card.kind === 'photo' ? ' cs-card-photo' : ''))
     if (p.card.kind === 'photo') {
-      // No product photo shipped yet — a slot-style placeholder keeps the
-      // site's established placeholder language until one is dropped in.
       c.innerHTML =
-        '<div class="cs-photo-ph"><span class="cs-ph-kind">' + p.card.phKind + '</span><span class="cs-ph-name">' + p.card.phName + '</span></div>' +
+        '<img class="cs-photo-img" src="' + p.card.img + '" alt="' + p.card.alt + '" loading="lazy" decoding="async"/>' +
         '<div class="cs-photo-label"><span>' + p.card.label + '</span><b>' + p.card.big + '</b></div>'
     } else {
       const chips = p.card.chips.map((t) => '<span class="cs-chip">' + t + '</span>').join('')
@@ -649,9 +648,15 @@ onMounted(() => {
       startAuto()
     } else if (nowIn && !was) {
       startAuto()
+      // Restart the active card's viz loops (killed on exit below).
+      handleViz(current)
     } else if (!nowIn && was) {
       stopAuto()
       if (progressTween) progressTween.pause()
+      // The viz loops are infinite gsap tweens (packet streams, orbit spins,
+      // sonar pulses). Off-screen they'd keep mutating SVG attrs every frame
+      // for the rest of the session — pure invisible work.
+      if (activeVizCard) stopViz(activeVizCard as VizCard)
     }
   }
 
@@ -1072,35 +1077,14 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
   color: rgba(242,243,236,0.68);
 }
 
-/* photo card variant (SmartoKids) — slot-style placeholder until a real
-   product photo ships */
+/* photo card variant (SmartoKids) */
 .cs-card.cs-card-photo { padding: 0; grid-template-rows: 1fr; }
-.cs-card.cs-card-photo .cs-photo-ph {
+.cs-card.cs-card-photo .cs-photo-img {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-content: center;
-  gap: 0.6rem;
-  justify-items: center;
-  text-align: center;
-  padding: 1.2rem;
-  background:
-    repeating-linear-gradient(-45deg, transparent 0, transparent 22px, rgba(242,243,236,0.04) 22px, rgba(242,243,236,0.04) 44px),
-    linear-gradient(158deg, #2A3120 0%, #1B2113 100%);
-}
-.cs-card.cs-card-photo .cs-ph-kind {
-  font: 500 0.6rem/1 var(--f-mono);
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: rgba(242,243,236,0.85);
-  padding: 0.35rem 0.65rem;
-  border: 1px solid rgba(242,243,236,0.3);
-  background: rgba(255,255,255,0.06);
-}
-.cs-card.cs-card-photo .cs-ph-name {
-  font: 600 0.9rem/1.4 var(--f-sans);
-  color: #F2F3EC;
-  max-width: 24ch;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .cs-card.cs-card-photo .cs-photo-label {
   position: absolute;

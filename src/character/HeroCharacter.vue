@@ -158,17 +158,32 @@ onMounted(() => {
     emit("loaded");
   });
 
-  // Skip GPU renders while the stage is occluded (paused prop, doors closed)
-  // or scrolled out of the viewport. State updates above the render call
-  // still run every frame, so the first rendered frame after a gate opens is
-  // exactly what an always-on loop would have shown.
+  // Two gates, different costs:
+  //  · paused prop (doors closed, stage occluded but on screen) — skip only
+  //    the GPU render; anim state keeps advancing so the character stays
+  //    warm and the first visible frame matches an always-on loop.
+  //  · scrolled out of the viewport — sleep the whole loop. The stage sits
+  //    above the rest of the page; once the user is past it, ticking the
+  //    mixer + head-follow every frame for the rest of the session is pure
+  //    waste. The IntersectionObserver restarts the loop on re-entry and
+  //    getDelta() swallows the sleep gap.
   let inViewport = true;
   const visObs = new IntersectionObserver((entries) => {
-    inViewport = entries.some((e) => e.isIntersecting);
+    const vis = entries.some((e) => e.isIntersecting);
+    if (vis === inViewport) return;
+    inViewport = vis;
+    if (vis && rafId === 0) {
+      clock.getDelta();
+      rafId = requestAnimationFrame(animate);
+    }
   });
   visObs.observe(container);
 
   const animate = () => {
+    if (!inViewport) {
+      rafId = 0;
+      return;
+    }
     rafId = requestAnimationFrame(animate);
     if (headBone) {
       handleHeadRotation(
@@ -181,9 +196,10 @@ onMounted(() => {
       );
       light.setPointLight(screenLight);
     }
-    const delta = clock.getDelta();
+    // Cap the step so a background-tab pause can't fast-forward the rig.
+    const delta = Math.min(clock.getDelta(), 0.066);
     if (mixer) mixer.update(delta);
-    if (!props.paused && inViewport) {
+    if (!props.paused) {
       renderer.render(scene, camera);
     }
   };

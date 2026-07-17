@@ -245,9 +245,9 @@ onMounted(() => {
   /* ─────────── stage skeleton ─────────── */
   const stage = el('div', 'tc-stage')
   stage.innerHTML =
-    '<div class="tc-bg is-front"><img alt="" /><div class="tc-bg-shade"></div></div>' +
-    '<div class="tc-bg"><img alt="" /><div class="tc-bg-shade"></div></div>' +
-    '<div class="tc-expander"><img alt="" /><div class="tc-bg-shade"></div></div>' +
+    '<div class="tc-bg is-front"><img alt="" loading="lazy" decoding="async" /><div class="tc-bg-shade"></div></div>' +
+    '<div class="tc-bg"><img alt="" loading="lazy" decoding="async" /><div class="tc-bg-shade"></div></div>' +
+    '<div class="tc-expander"><img alt="" loading="lazy" decoding="async" /><div class="tc-bg-shade"></div></div>' +
     '<div class="tc-content">' +
     '  <div class="tc-index"><span class="tc-num"><span class="tc-num-inner">01</span></span><span class="tc-count">/ 06</span></div>' +
     '  <div class="tc-info">' +
@@ -289,9 +289,13 @@ onMounted(() => {
     const card = el('article', 'tcm-card')
     const media = el('div', 'tcm-media')
     const img = el('img') as HTMLImageElement
-    img.src = p.img
+    // No src yet: this carousel is display:none on desktop, and images
+    // without a layout box are exempt from loading="lazy" — the browser
+    // fetches them eagerly at mount. Hydrated by the near-viewport observer.
+    img.dataset.src = p.img
     img.alt = p.name
     img.loading = 'lazy'
+    img.decoding = 'async'
     media.appendChild(img)
     media.appendChild(el('div', 'tc-card-shade'))
     media.appendChild(el('span', 'tcm-num', p.num + ' / 06'))
@@ -365,6 +369,8 @@ onMounted(() => {
       c.setAttribute('aria-label', 'Show project: ' + p.name)
       c.dataset.queue = String(slot)
       const img = el('img') as HTMLImageElement
+      img.loading = 'lazy'
+      img.decoding = 'async'
       img.src = p.img
       img.alt = ''
       c.appendChild(img)
@@ -531,7 +537,26 @@ onMounted(() => {
   stage.querySelector('.tc-prev')!.addEventListener('click', () => prev())
 
   /* ─────────── init ─────────── */
-  P.forEach((p) => { const i = new Image(); i.src = p.img }) // preload
+  // Preload every stage image — but only once the section approaches the
+  // viewport. At mount this is ~3MB of below-fold JPEGs racing the hero's
+  // first-paint assets on page load.
+  const preloadAll = () => {
+    P.forEach((p) => { const i = new Image(); i.src = p.img })
+    // Hydrate the mobile carousel's deferred imgs (see buildLinks note).
+    mobile.querySelectorAll<HTMLImageElement>('img[data-src]').forEach((i) => {
+      i.src = i.dataset.src!
+      delete i.dataset.src
+    })
+  }
+  // Observe the mount, not the stage: on phones the stage is display:none
+  // (and the carousel shown), so a stage observer would never fire there.
+  const nearIo = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) {
+      preloadAll()
+      nearIo.disconnect()
+    }
+  }, { rootMargin: '1200px 0px' })
+  nearIo.observe(mount)
   setBg(P[order[0]])
   setInfo(P[order[0]])
   buildCards()
@@ -597,6 +622,7 @@ onMounted(() => {
 
   teardown = () => {
     io.disconnect()
+    nearIo.disconnect()
     clearTimeout(fallbackTimer)
     clearTimeout(resizeT)
     window.removeEventListener('scroll', onScrollFb)
@@ -702,10 +728,11 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
   gap: 0.55rem;
 }
 .tc-meta {
-  font: 500 0.66rem/1.6 var(--f-mono);
+  font: 500 0.7rem/1.6 var(--f-mono);
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(244, 244, 241, 0.6);
+  color: rgba(244, 244, 241, 0.78);
+  text-shadow: 0 1px 3px rgba(8, 9, 11, 0.9);
 }
 .tc-title {
   font: 800 clamp(1.25rem, 2vw, 1.85rem)/1.08 var(--f-sans);
@@ -713,6 +740,7 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
   text-transform: uppercase;
   text-wrap: balance;
   max-width: min(48vw, 680px);
+  text-shadow: 0 2px 10px rgba(8, 9, 11, 0.55);
 }
 .tc-title .tc-w {
   display: inline-block;
@@ -723,8 +751,9 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
 }
 .tc-title .tc-w > span { display: inline-block; will-change: transform; }
 .tc-role {
-  font: 400 clamp(0.8rem, 0.92vw, 0.92rem)/1.45 var(--f-sans);
-  color: rgba(244, 244, 241, 0.78);
+  font: 400 clamp(0.84rem, 0.95vw, 0.95rem)/1.5 var(--f-sans);
+  color: rgba(244, 244, 241, 0.92);
+  text-shadow: 0 1px 3px rgba(8, 9, 11, 0.9);
 }
 .tc-links {
   display: flex;
@@ -735,9 +764,10 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
   letter-spacing: 0.08em;
 }
 .tc-links a {
-  color: rgba(244, 244, 241, 0.85);
+  color: rgba(244, 244, 241, 0.95);
   text-decoration: underline;
   text-underline-offset: 3px;
+  text-shadow: 0 1px 3px rgba(8, 9, 11, 0.9);
   transition: color 0.25s ease;
 }
 .tc-links a:hover { color: var(--accent); }
@@ -777,11 +807,17 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
 .tc-bullets li {
   position: relative;
   padding-left: 1.05rem;
-  font: 400 clamp(0.72rem, 0.8vw, 0.84rem)/1.42 var(--f-sans);
-  color: rgba(244, 244, 241, 0.76);
+  font: 400 clamp(0.86rem, 0.98vw, 1rem)/1.55 var(--f-sans);
+  color: rgba(244, 244, 241, 0.95);
   text-wrap: pretty;
+  /* Legibility over photography: a tight dark contour + soft local halo keep
+     the copy readable even where the shade gradients thin out (right column,
+     bright floors) — no change to the image treatment itself. */
+  text-shadow:
+    0 1px 2px rgba(8, 9, 11, 0.9),
+    0 0 14px rgba(8, 9, 11, 0.65);
 }
-.tc-bullets li strong { color: #F4F4F1; font-weight: 600; }
+.tc-bullets li strong { color: #FFFFFF; font-weight: 600; }
 .tc-bullets li::before {
   content: '';
   position: absolute;
@@ -1063,6 +1099,6 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
   .tc-num { font-size: clamp(2rem, 3.6vw, 3.2rem); }
   .tc-title { font-size: clamp(1.1rem, 1.7vw, 1.55rem); }
   .tc-bullets { gap: 0.35rem 1.3rem; }
-  .tc-bullets li { font-size: clamp(0.68rem, 0.76vw, 0.78rem); line-height: 1.38; }
+  .tc-bullets li { font-size: clamp(0.78rem, 0.88vw, 0.9rem); line-height: 1.45; }
 }
 </style>

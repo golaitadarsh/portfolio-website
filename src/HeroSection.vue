@@ -670,7 +670,7 @@ onMounted(() => {
           <RouterLink to="/education"><span class="nav-num">01</span><span class="nav-label">Education</span></RouterLink>
           <RouterLink to="/experience"><span class="nav-num">02</span><span class="nav-label">Experience</span></RouterLink>
           <RouterLink to="/projects"><span class="nav-num">03</span><span class="nav-label">Projects</span></RouterLink>
-          <a href="mailto:adarsh.g@iitgn.ac.in"><span class="nav-num">04</span><span class="nav-label">Contact</span></a>
+          <a href="mailto:golaitadarsh@gmail.com"><span class="nav-num">04</span><span class="nav-label">Contact</span></a>
         </nav>
       </header>
 
