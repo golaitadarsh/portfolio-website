@@ -727,10 +727,10 @@ function playCharAction(name: string) {
 // nothing moves before `start`, everything is done and settled by `end` so
 // the pin never releases mid-motion.
 const PUSH = {
-  start: 0.53,     // pin progress where the push runway begins
+  start: 0.40,     // pin progress where the push runway begins
   end: 0.94,       // pin progress where the exit is fully complete (settle buffer)
-  contact: 0.28,   // MANUAL LEVER — share of the runway spent walking in.
-  slide: 0.62,     // MANUAL LEVER — share of the runway where the text starts
+  contact: 0.21,   // MANUAL LEVER — share of the runway spent walking in.
+  slide: 0.47,     // MANUAL LEVER — share of the runway where the text starts
                    // to move. The gap [contact, slide) is the STRUGGLE phase:
                    // he's at the text, visibly pushing (the clip strides), but
                    // nothing budges yet — so the viewer reads the push before
