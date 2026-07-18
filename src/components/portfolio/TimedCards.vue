@@ -49,7 +49,7 @@ const ACADEMIC_PROJECTS: AcademicProject[] = [
       `Integrated steering, braking, throttle, and chain-driven powertrain subsystems and resolved system-level failures, including engine vibration and control-linkage issues, through iterative isolate-fix-retest cycles to deliver a fully functional vehicle.`,
     ],
     links: [
-      { label: 'Project Video', href: 'https://drive.google.com/file/d/1ISyMh713Xe9EiCL6Ku4CpUzXcwW-FJU1/view' },
+      { label: 'Project Video', href: 'https://drive.google.com/file/d/1ywxGPlD9dI2tRweamNH_gNEnGWtsXNB3/view?usp=sharing' },
       { label: 'Team', href: 'https://drive.google.com/file/d/1tHUv4p33o5MtHJyL4L_5K1UbzSbgrafH/view' },
     ],
     href: '#',
@@ -908,12 +908,6 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
 }
 .tc-rail-actions { display: inline-flex; align-items: center; margin-right: 0.35rem; }
 .tc-controls .tc-actions { margin-top: 0; }
-/* coming-soon projects: ghost button so "live" reads instantly */
-.tc-actions.is-soon .tc-btn {
-  background: transparent;
-  border: 1px solid rgba(244, 244, 241, 0.35);
-  color: rgba(244, 244, 241, 0.78);
-}
 @media (max-width: 1000px) {
   .tc-progress { display: none; } /* keep the rail clear of the card queue */
 }

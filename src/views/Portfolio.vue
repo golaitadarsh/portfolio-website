@@ -375,6 +375,11 @@ function applyHeroTransform(force = false) {
   page1.style.setProperty('--hs-shadow-strength', `${eased.toFixed(3)}`)
   page1.style.setProperty('--hs-depth-shadow', `${tiltCurve.toFixed(3)}`)
   heroSlotRef.value?.style.setProperty('--hs-cover-progress', `${Math.min(1, eased * 1.4).toFixed(3)}`)
+  // Landing progress for the sticky-level résumé CTA: it fades in near the
+  // end of the hero zoom and is inert to the door phase (t holds at 1).
+  const driverEl = heroDriverRef.value
+  driverEl?.style.setProperty('--hs-hero-t', t.toFixed(3))
+  driverEl?.style.setProperty('--hs-resume-pe', t > 0.8 ? 'auto' : 'none')
 
   const textFade = smoothstep(heroZoom.textFadeStart, heroZoom.textFadeEnd, t)
   page1.style.setProperty('--hs-text-fade', `${textFade.toFixed(3)}`)
@@ -696,8 +701,9 @@ function setupAwardsPin(): (() => void) | null {
 // section scrolls into view, takes icon-button action requests while
 // pinned, and during the final pin segment scrubs a contact-locked
 // push-out — he walks INTO the text block, struggles against it for a beat
-// (pushing visibly before anything moves), then text and character travel
-// off the left edge together at the same speed, like a real shove.
+// (pushing visibly before anything moves), then shoves the text off the
+// left edge while HOLDING his ground — only the text leaves the stage; he
+// stays put, relaxing back to idle once it has fully cleared.
 // The whole push-out is scroll-SCRUBBED with a short damping tail: scroll
 // position sets the choreography target (and the pushing clip's playhead,
 // via setPushTravel), and the displayed timeline eases toward it over
@@ -727,19 +733,32 @@ function playCharAction(name: string) {
 // nothing moves before `start`, everything is done and settled by `end` so
 // the pin never releases mid-motion.
 const PUSH = {
-  start: 0.40,     // pin progress where the push runway begins
-  end: 0.94,       // pin progress where the exit is fully complete (settle buffer)
-  contact: 0.21,   // MANUAL LEVER — share of the runway spent walking in.
-  slide: 0.47,     // MANUAL LEVER — share of the runway where the text starts
+  start: 0.11,     // pin progress where the push runway begins. Tuned as a
+                   // PAIR with the section's 600vh height: start*pinRange is
+                   // the absolute dead scroll before he moves (~500px — same
+                   // as the old 240vh stage), while the taller pin stretches
+                   // the runway itself, so the whole animation plays ~5×
+                   // slower per scroll px without adding dead time up front.
+  end: 0.945,      // pin progress where the exit is fully complete (settle buffer)
+  contact: 0.164,  // MANUAL LEVER — share of the runway spent walking in.
+                   // Re-paired with the 600vh height so the walk-in keeps the
+                   // same absolute scroll (~615px) it had at 510vh/0.21.
+  slide: 0.36,     // MANUAL LEVER — share of the runway where the text starts
                    // to move. The gap [contact, slide) is the STRUGGLE phase:
                    // he's at the text, visibly pushing (the clip strides), but
                    // nothing budges yet — so the viewer reads the push before
                    // the slide answers it. Scrubbed like everything else.
-  strugPx: 1100,   // fake clip-travel px fed during the struggle so his legs
+                   // Re-paired with the 600vh height to keep the struggle at
+                   // ~730px. The height went 510→600vh because exitPx grew
+                   // (the character must now clear the viewport too, not just
+                   // the text — ~1215px vs ~795px of travel); the taller pin
+                   // gives the exit leg ~2400px of scroll so the text slide
+                   // KEEPS the same px-per-scroll speed as before.
+  strugPx: 1020,   // fake clip-travel px fed during the struggle so his legs
                    // drive against the ground while he holds position
-                   // (~2 loops of the pushing clip at 520 px/s)
+                   // (scaled with the struggle span — ~1.39 px of clip travel
+                   // per px of scroll — so the stride cadence stays the same)
   reachFrac: 0.20, // lead-hand reach ahead of body center, fraction of slot height
-  bodyFrac: 0.15,  // body half-width, fraction of slot height
   clearPad: 48,    // extra px past the left edge so nothing peeks back in
 }
 
@@ -771,8 +790,9 @@ function setupSummaryStage(): (() => void) | null {
   function choreo(v: number) {
     // Contact-locked choreography in three scrubbed phases: eased walk-in
     // (a stride, not a glide), a struggle at the text (pushing with nothing
-    // moving yet), then text and character travel off together at the same
-    // speed. `strug` never touches position — it only feeds clip travel.
+    // moving yet), then the shove — text and character slide off TOGETHER,
+    // his hands stay on it the whole way. `strug` never touches position —
+    // it only feeds clip travel; `exit` moves both columns in lockstep.
     const appr = smoothstep(0, 1, Math.min(1, v / PUSH.contact))
     const strug = Math.min(1, Math.max(0, (v - PUSH.contact) / (PUSH.slide - PUSH.contact)))
     const exit = Math.max(0, (v - PUSH.slide) / (1 - PUSH.slide))
@@ -784,6 +804,11 @@ function setupSummaryStage(): (() => void) | null {
     sec!.style.setProperty('--sum-appr', appr.toFixed(4))
     sec!.style.setProperty('--sum-exit', exit.toFixed(4))
     sec!.style.setProperty('--sum-body-x', `${(-exit * exitPx).toFixed(1)}px`)
+    // Character position: walk-in, then the exit term IN LOCKSTEP with the
+    // text (same exitPx) — his hands stay planted on the block while he
+    // shoves it off. Set dressing counter-translates against the walk-in
+    // only, so it needs the walk term published separately.
+    sec!.style.setProperty('--sum-walk-x', `${(-(appr * apprPx)).toFixed(1)}px`)
     sec!.style.setProperty('--sum-char-x', `${(-(appr * apprPx + exit * exitPx)).toFixed(1)}px`)
   }
 
@@ -798,12 +823,15 @@ function setupSummaryStage(): (() => void) | null {
     const textRight = bodyR.right - bodyX
     const slotCenter = (slotR.left + slotR.right) / 2 - charX
     const reach = slotR.height * PUSH.reachFrac
-    const bodyHalf = slotR.height * PUSH.bodyFrac
     // Walk-in ends with his lead hands at the text's right edge; the shove
-    // then carries BOTH columns far enough that text and body fully clear
-    // the viewport's left edge at exit = 1.
+    // then carries text AND character together (same exitPx) far enough
+    // that BOTH fully clear the viewport's left edge at exit = 1 — he
+    // pushes the text off and follows it out before the pin releases.
+    // The character's clearance is measured from his slot's right edge at
+    // the contact position (layout right minus the walk-in he already did).
     apprPx = Math.max(0, slotCenter - reach - textRight)
-    exitPx = Math.max(textRight, slotCenter + bodyHalf - apprPx) + PUSH.clearPad
+    const slotRightAtContact = slotR.right - charX - apprPx
+    exitPx = Math.max(textRight, slotRightAtContact) + PUSH.clearPad
   }
 
   // Layout READ — runs in the scroll event (before this frame's rAF writes)
@@ -815,13 +843,15 @@ function setupSummaryStage(): (() => void) | null {
     sTarget = Math.min(1, Math.max(0, (p - PUSH.start) / (PUSH.end - PUSH.start)))
   }
 
-  // Character travel (px, positive) along the runway at scalar v — the same
-  // quantity publish() writes into --sum-char-x. SummaryCharacter scrubs
-  // the pushing clip's playhead from it, so stride and columns share one
-  // timeline.
+  // Clip travel (px, positive) along the runway at scalar v. SummaryCharacter
+  // scrubs the pushing clip's playhead from it, so stride and columns share
+  // one timeline. The `appr` and `exit` terms move his position (--sum-char-x);
+  // only the struggle is treadmill.
   function travelOf(v: number) {
     // The struggle term is travel the CLIP sees but the columns don't —
-    // strides against a text block that hasn't budged yet.
+    // strides against a text block that hasn't budged yet. The exit term is
+    // REAL travel: he slides with the text at the same exitPx, so the clip
+    // playhead matches his actual ground displacement — no skating.
     const { appr, strug, exit } = choreo(v)
     return appr * apprPx + strug * PUSH.strugPx + exit * exitPx
   }
@@ -838,7 +868,10 @@ function setupSummaryStage(): (() => void) | null {
     s += (sTarget - s) * (1 - Math.exp(-dt / SCRUB_TAU))
     if (Math.abs(sTarget - s) < 0.001) s = sTarget
     publish()
-    const wantPush = s > 0.005
+    // Pushing pose spans the whole runway EXCEPT the settled end: once the
+    // text has fully cleared (s snaps to 1) he relaxes back to idle instead
+    // of holding a frozen mid-stride pose; any retrace re-engages the clip.
+    const wantPush = s > 0.005 && s < 0.999
     if (wantPush !== pushOn) {
       pushOn = wantPush
       summaryCharRef.value?.setPushing?.(pushOn)
@@ -854,13 +887,16 @@ function setupSummaryStage(): (() => void) | null {
     if (!raf) raf = requestAnimationFrame(tick)
   }
 
-  // Entrance: fire his jump-in once the section scrolls into view.
+  // Entrance: fire his jump-in once the section scrolls into view. Trigger
+  // is viewport-based (top crosses 65% of the viewport), not a ratio
+  // threshold — the section is several viewports tall, so its max
+  // intersection ratio is well under any useful threshold value.
   const io = new IntersectionObserver((entries) => {
     if (entries.some((e) => e.isIntersecting)) {
       if (!mqMotion.matches) summaryCharRef.value?.enter?.()
       io.disconnect()
     }
-  }, { threshold: 0.35 })
+  }, { rootMargin: '0px 0px -35% 0px' })
   io.observe(sec)
 
   // Mount the (heavy) summary character only when the user is within ~two
@@ -1366,14 +1402,10 @@ onBeforeUnmount(() => {
           <span class="mark" aria-hidden="true">AG</span>
           <span class="label">A note from Adarsh</span>
         </div>
-        <div class="right">
-          <a href="#contact" class="cta">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-              <path d="M4 7h16M4 12h16M4 17h10" stroke-linecap="square"></path>
-            </svg>
-            Résumé
-          </a>
-        </div>
+        <!-- Résumé CTA lives at .hs-resume (top layer of .hs-sticky) so the
+             one button persists unchanged through the door-open transition;
+             this cell stays as the grid's right-column filler. -->
+        <div class="right"></div>
       </header>
 
       <div class="im-marquee row-1" aria-hidden="true">
@@ -1459,6 +1491,22 @@ onBeforeUnmount(() => {
           <div class="hs-door-3d__half hs-door-3d__half--l"></div>
           <div class="hs-door-3d__half hs-door-3d__half--r"></div>
         </div>
+
+        <!-- Résumé CTA — top layer of the sticky stage, above hs-front and
+             the door halves. Fades in once as Page-1 commits to landing
+             (--hs-hero-t), then sits untouched: the gate opening animates
+             beneath it while the button holds position and brightness. -->
+        <a
+          class="hs-resume"
+          href="https://drive.google.com/file/d/1YwbA4hQ8tMp-VhoR3a5jC72Qx2hOLKUD/view?usp=sharing"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h10" stroke-linecap="square"></path>
+          </svg>
+          Résumé
+        </a>
       </div>
     </div>
 
@@ -1893,7 +1941,7 @@ onBeforeUnmount(() => {
 
   <footer id="contact" class="footer">
     <div class="footer-grid">
-      <h2>Open to <em>product &amp; program operations</em> at hardware-first companies.</h2>
+      <h2>Open to <em>Business operations</em> at hardware-first companies.</h2>
       <div class="links">
         <a href="mailto:golaitadarsh@gmail.com">
           <span class="k">Email</span>
@@ -2156,21 +2204,6 @@ main > section.section {
   color: rgba(242,243,236,0.78);
 }
 .im-top .right { display: flex; justify-content: flex-end; }
-.im-top .cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 0.7rem 1.1rem;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font: 800 0.75rem/1 var(--f-sans);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  border-radius: 4px;
-  transition: transform 0.25s ease, filter 0.25s ease;
-}
-.im-top .cta:hover { transform: translateY(-2px); filter: brightness(1.05); }
-.im-top .cta svg { width: 14px; height: 14px; }
 @media (max-width: 720px) {
   .im-top { grid-template-columns: auto auto auto; }
   .im-top .center .label { display: none; }
@@ -2537,6 +2570,35 @@ main > section.section {
 @media (prefers-reduced-motion: reduce) {
   .hs-sticky .cr-hint, .hs-sticky .cr-hint-dot { animation: none; }
 }
+/* Résumé CTA — single element on the sticky stage's top layer (above
+   hs-front z5 and the door halves z3). Position mirrors im-top's old CTA
+   cell: its top/right offsets equal im-top's padding, so it sits exactly
+   where the button always lived on the intro page. Fades in once near the
+   end of the hero landing (--hs-hero-t, which holds at 1 through the door
+   scrub and dwell) — the gate animates beneath it while the button never
+   moves, dims, or re-renders. */
+.hs-sticky .hs-resume {
+  position: absolute;
+  top: clamp(1.25rem, 3vh, 2rem);
+  right: clamp(1.5rem, 3vw, 2.5rem);
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.7rem 1.1rem;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: 800 0.75rem/1 var(--f-sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border-radius: 4px;
+  text-decoration: none;
+  transition: transform 0.25s ease, filter 0.25s ease;
+  opacity: clamp(0, (var(--hs-hero-t, 0) - 0.72) * 5, 1);
+  pointer-events: var(--hs-resume-pe, none);
+}
+.hs-sticky .hs-resume:hover { transform: translateY(-2px); filter: brightness(1.05); }
+.hs-sticky .hs-resume svg { width: 14px; height: 14px; }
 /* Touch devices have no cursor to move — the hint is wrong copy there, and
    on phone widths it collides with the headline. Head-follow still works
    via touch-drag; the stage just doesn't advertise it with cursor copy. */
@@ -2769,15 +2831,20 @@ main > section.section {
 }
 
 /* ─── summary — pinned character stage ───
-   Staged (desktop, motion OK): section grows to 240vh, inner pin holds one
-   viewport. JS publishes smoothed scroll-scrub vars:
+   Staged (desktop, motion OK): section grows to 600vh (tall on purpose —
+   the pin range IS the animation's scroll gain; shorter = the whole push
+   blows through in a flick), inner pin holds one viewport. JS publishes
+   smoothed scroll-scrub vars:
      --sum-appr    0..1  walk-in phase (fades the actions + ghost numeral)
      --sum-exit    0..1  shove phase (text lean + ground-line fade)
      --sum-body-x  px    text column travel — measured to clear the viewport
-     --sum-char-x  px    character travel — contact-locked to the text
+     --sum-char-x  px    character travel — walk-in, then lockstep with the
+                         text during the shove (he rides the push out)
+     --sum-walk-x  px    walk-in term alone — set dressing counter-translates
+                         against this so the set stays put under his stride
    Non-staged: plain stacked flow, character below text. */
-#summary { --sum-appr: 0; --sum-exit: 0; --sum-body-x: 0px; --sum-char-x: 0px; }
-#summary.sum-staged { height: 240vh; padding: 0; }
+#summary { --sum-appr: 0; --sum-exit: 0; --sum-body-x: 0px; --sum-char-x: 0px; --sum-walk-x: 0px; }
+#summary.sum-staged { height: 600vh; padding: 0; }
 #summary .summary-pin { min-height: 0; }
 #summary.sum-staged .summary-pin {
   position: sticky;
@@ -2849,8 +2916,8 @@ main > section.section {
 }
 /* Set dressing for the character column: an oversized ghost index numeral
    behind the canvas and a ground hairline under his feet. Both counter-
-   translate against the column's push travel — the set stays put while he
-   walks off it — and fade as their phase proceeds. */
+   translate against the column's walk-in travel — the set stays put while
+   he strides across it — and fade as their phase proceeds. */
 #summary.sum-staged .char-slot::before {
   content: '00';
   position: absolute;
@@ -2859,7 +2926,7 @@ main > section.section {
   font: 900 clamp(8rem, 12vw, 13rem)/0.8 var(--f-sans);
   letter-spacing: -0.06em;
   color: rgba(9, 9, 11, 0.05);
-  transform: translateX(calc(-1 * var(--sum-char-x, 0px)));
+  transform: translateX(calc(-1 * var(--sum-walk-x, 0px)));
   opacity: calc(1 - var(--sum-appr, 0));
   pointer-events: none;
   user-select: none;
@@ -2872,7 +2939,7 @@ main > section.section {
   bottom: 10%;
   height: 1px;
   background: var(--rule);
-  transform: translateX(calc(-1 * var(--sum-char-x, 0px)));
+  transform: translateX(calc(-1 * var(--sum-walk-x, 0px)));
   opacity: calc(1 - var(--sum-exit, 0));
   pointer-events: none;
 }
@@ -2883,11 +2950,12 @@ main > section.section {
 }
 /* Push-out — contact-locked, scrubbed, smoothed in JS (no CSS transitions:
    reverse scroll must retrace the exact same path). Phase 1 walks him to
-   the text (--sum-char-x only), phase 2 carries text + character off the
-   left edge together at the same speed — a shove, not two things sliding
-   apart. The text leans back a touch as it goes, like it took the hit.
-   Distances are measured px, so at exit=1 both columns fully clear the
-   viewport before the pin releases. */
+   the text (--sum-char-x only), phase 2 slides text and character off
+   together — same px, hands never leave the block, so the push reads as
+   one continuous shove instead of the text escaping on its own. The text
+   leans back a touch as it goes, like it took the hit. Distances are
+   measured px, so at exit=1 the text fully clears the viewport before the
+   pin releases; he ends the shove standing at the left edge. */
 #summary.sum-staged .body {
   transform:
     translate3d(var(--sum-body-x, 0px), 0, 0)
