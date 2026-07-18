@@ -10,6 +10,7 @@ import {
   handleTouchMove,
 } from "./mouseUtils";
 import setAnimations from "./animationUtils";
+import setupIdleMotion from "./idleMotion";
 import "./CharacterModel.css";
 
 interface Props {
@@ -78,6 +79,7 @@ onMounted(() => {
   let headBone: THREE.Object3D | null = null;
   let screenLight: any | null = null;
   let mixer: THREE.AnimationMixer | undefined;
+  let idleMotion: ReturnType<typeof setupIdleMotion> | null = null;
   let rafId = 0;
   let hoverCleanup: (() => void) | void;
   let introTimer: number | undefined;
@@ -149,6 +151,7 @@ onMounted(() => {
       char.getObjectByName("Neck") ||
       null;
     screenLight = char.getObjectByName("screenlight") || null;
+    idleMotion = setupIdleMotion(char, gltf.animations);
 
     introTimer = window.setTimeout(() => {
       light.turnOnLights();
@@ -179,12 +182,16 @@ onMounted(() => {
   });
   visObs.observe(container);
 
+  let swayTime = 0;
   const animate = () => {
     if (!inViewport) {
       rafId = 0;
       return;
     }
     rafId = requestAnimationFrame(animate);
+    // Cap the step so a background-tab pause can't fast-forward the rig.
+    const delta = Math.min(clock.getDelta(), 0.066);
+    swayTime += delta;
     if (headBone) {
       handleHeadRotation(
         headBone,
@@ -192,13 +199,15 @@ onMounted(() => {
         mouse.y,
         interpolation.x,
         interpolation.y,
-        THREE.MathUtils.lerp
+        THREE.MathUtils.lerp,
+        swayTime
       );
       light.setPointLight(screenLight);
     }
-    // Cap the step so a background-tab pause can't fast-forward the rig.
-    const delta = Math.min(clock.getDelta(), 0.066);
     if (mixer) mixer.update(delta);
+    // After the mixer — it stomps every torso bone it animates, so the
+    // breathing/weight-shift offsets must layer onto the fresh pose.
+    if (idleMotion) idleMotion.update(swayTime);
     if (!props.paused) {
       renderer.render(scene, camera);
     }

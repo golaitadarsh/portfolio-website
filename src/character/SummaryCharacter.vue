@@ -374,6 +374,7 @@ onMounted(() => {
   });
   visObs.observe(container);
 
+  let swayTime = 0;
   const animate = () => {
     if (!inViewport) {
       rafId = 0;
@@ -382,6 +383,7 @@ onMounted(() => {
     rafId = requestAnimationFrame(animate);
     // Cap the step so a background-tab pause can't fast-forward the rig.
     const delta = Math.min(clock.getDelta(), 0.066);
+    swayTime += delta;
     if (pushing.value && pushAction) {
       // Scrub: playhead is a pure function of the reported travel, wrapped
       // over the loop. timeScale is 0, so mixer.update never advances it —
@@ -395,7 +397,7 @@ onMounted(() => {
       charRoot.rotation.y = THREE.MathUtils.lerp(charRoot.rotation.y, targetYaw, 0.08);
     }
     if (headBone && headFollow) {
-      handleHeadRotation(headBone, mouse.x, mouse.y, 0.1, 0.2, THREE.MathUtils.lerp);
+      handleHeadRotation(headBone, mouse.x, mouse.y, 0.1, 0.2, THREE.MathUtils.lerp, swayTime);
     }
     if (!props.paused) {
       renderer.render(scene, camera);
