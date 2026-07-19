@@ -1612,22 +1612,6 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div class="edu-visuals edu-detail" style="--d: 3;">
-            <div class="slot" style="aspect-ratio: 4/3;">
-              <div class="slot-body">
-                <span class="slot-kind" data-kind="3D">3D</span>
-                <span class="slot-name">IITGN campus / academic block model</span>
-                <span class="slot-aspect">4 : 3</span>
-              </div>
-            </div>
-            <div class="slot accent" style="aspect-ratio: 1/1;">
-              <div class="slot-body">
-                <span class="slot-kind" data-kind="3D">3D</span>
-                <span class="slot-name">Gold Medal — Outstanding Social Service</span>
-                <span class="slot-aspect">1 : 1 · medallion rotation</span>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </section>
@@ -3527,26 +3511,9 @@ main > section.section {
 
 #education .edu-details {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: clamp(2rem, 5vw, 5rem);
   align-items: end;
-}
-#education .edu-visuals {
-  display: grid;
-  grid-template-columns: 1.35fr 1fr;
-  gap: 0.75rem;
-  align-items: end;
-}
-#education .edu-visuals .slot { max-height: 26vh; min-height: 0; }
-@media (max-width: 980px) {
-  #education .edu-details { grid-template-columns: minmax(0, 1fr); }
-  #education .edu-visuals { align-items: start; }
-}
-/* short or cramped viewports: drop the visual slots while pinned so
-   every stage fits inside the 100vh pin without clipping */
-@media (max-height: 660px), (max-width: 700px) {
-  #education.edu-staged .edu-visuals { display: none; }
-  #education.edu-staged .edu-details { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* stage motion — JS adds .edu-staged only when pinning is active */
