@@ -369,7 +369,10 @@ const showCard = (cat: 'corporate' | 'academic') =>
 <style scoped>
 .filters {
   position: sticky;
-  top: 73px;
+  /* Was a hardcoded 73px, which only ever matched one bar height — on a phone
+     the topbar is 63px, so the filter row parked 10px below it and page text
+     scrolled through the gap. Track the token the bar is actually sized from. */
+  top: var(--topbar-h);
   z-index: 60;
   display: flex;
   gap: 1.5rem;
@@ -419,7 +422,7 @@ const showCard = (cat: 'corporate' | 'academic') =>
 .pcard {
   grid-column: span 6;
   background: var(--paper);
-  padding: clamp(1.5rem, 3vh, 2.25rem);
+  padding: var(--pad-box-sm);
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -547,13 +550,36 @@ const showCard = (cat: 'corporate' | 'academic') =>
 }
 .pcard .plinks a::after { content: ' →'; }
 .pcard.featured .plinks a { color: var(--accent); border-color: var(--accent); }
+@media (max-width: 720px) {
+  /* These artifact links are the point of the card (certificate, report,
+     video) but render as 16px-tall mono text. Padding would drag the
+     underline off the word, so the hit box is an invisible ::before instead —
+     visual identical, thumb-sized target. Row gap grows to keep stacked
+     links' boxes from overlapping. */
+  .pcard .plinks { gap: 1.5rem 1.25rem; }
+  .pcard .plinks a { position: relative; }
+  .pcard .plinks a::before {
+    content: '';
+    position: absolute;
+    left: 0; right: 0;
+    top: 50%;
+    height: 40px;
+    transform: translateY(-50%);
+  }
+  .filters .chip-row .chip { min-height: 40px; padding-inline: 1rem; }
+  /* Same call the topbar made: at 0.92 alpha the body copy scrolling under
+     this bar ghosts through as a grey smudge no blur radius fixes. Opaque —
+     which also drops a backdrop-filter compositing layer on the device that
+     can least afford it. */
+  .filters { background: var(--paper); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
 
 .group-head {
   display: grid;
   grid-template-columns: 9rem 1fr auto;
   gap: 2rem;
   align-items: baseline;
-  padding: clamp(3rem, 6vh, 5rem) var(--gutter-x) clamp(1.5rem, 3vh, 2rem);
+  padding: var(--pad-sec-sm) var(--gutter-x) var(--pad-box-sm);
   border-bottom: 1px solid var(--rule);
 }
 @media (max-width: 720px) {

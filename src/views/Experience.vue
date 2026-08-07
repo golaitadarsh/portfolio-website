@@ -179,7 +179,7 @@ import DetailLayout from '../layouts/DetailLayout.vue'
   border-bottom: 1px solid var(--rule);
 }
 .ledger .cell {
-  padding: clamp(1.5rem, 3vh, 2rem) var(--gutter-x);
+  padding: var(--pad-box-sm) var(--gutter-x);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -212,7 +212,7 @@ import DetailLayout from '../layouts/DetailLayout.vue'
   display: grid;
   grid-template-columns: 9rem 1fr;
   gap: clamp(1.5rem, 3vw, 3rem);
-  padding: clamp(3rem, 6vh, 5rem) var(--gutter-x);
+  padding: var(--pad-sec-sm) var(--gutter-x);
   border-bottom: 1px solid var(--rule);
   position: relative;
 }

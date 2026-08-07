@@ -25,6 +25,11 @@ interface Props {
   colorUpdateSpeed?: number;
   backColor?: ColorRGB;
   transparent?: boolean;
+  /** False = the layer fades out and stops taking pointer input. The loop that
+   *  may still be in flight retires on its own idle timeout, which also gives
+   *  the dye time to fully dissipate — so if `active` comes back the canvas is
+   *  blank rather than showing a frozen streak from minutes ago. */
+  active?: boolean;
   class?: HTMLAttributes["class"];
 }
 
@@ -47,6 +52,7 @@ const props = withDefaults(defineProps<Props>(), {
   colorUpdateSpeed: 10,
   backColor: () => ({ r: 0.5, g: 0, b: 0 }),
   transparent: true,
+  active: true,
 });
 
 interface Pointer {
@@ -1334,7 +1340,12 @@ onMounted(() => {
   // matches the old first-mousemove bootstrap, which generated one eagerly.
   pointers[0].color = generateColor();
 
+  // Every handler bails when inactive. Skipping the pointer bookkeeping (not
+  // just the wake) matters: recording positions while the layer is hidden
+  // would leave a stale prevTexcoord, and the first frame after reactivation
+  // would splat one enormous streak across the whole screen.
   const onMouseDown = (e: MouseEvent) => {
+    if (!props.active) return;
     const pointer = pointers[0];
     const posX = scaleByPixelRatio(e.clientX);
     const posY = scaleByPixelRatio(e.clientY);
@@ -1345,6 +1356,7 @@ onMounted(() => {
   window.addEventListener("mousedown", onMouseDown);
 
   const onMouseMove = (e: MouseEvent) => {
+    if (!props.active) return;
     const pointer = pointers[0];
     const posX = scaleByPixelRatio(e.clientX);
     const posY = scaleByPixelRatio(e.clientY);
@@ -1354,6 +1366,7 @@ onMounted(() => {
   window.addEventListener("mousemove", onMouseMove);
 
   const onTouchStart = (e: TouchEvent) => {
+    if (!props.active) return;
     const touches = e.targetTouches;
     const pointer = pointers[0];
     for (let i = 0; i < touches.length; i++) {
@@ -1366,6 +1379,7 @@ onMounted(() => {
   window.addEventListener("touchstart", onTouchStart, false);
 
   const onTouchMove = (e: TouchEvent) => {
+    if (!props.active) return;
     const touches = e.targetTouches;
     const pointer = pointers[0];
     for (let i = 0; i < touches.length; i++) {
@@ -1438,7 +1452,8 @@ onBeforeUnmount(() => {
 <template>
   <div
     :class="cn(props.class)"
-    style="pointer-events:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:50;"
+    :style="{ opacity: props.active ? 1 : 0 }"
+    style="pointer-events:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:50;transition:opacity 0.32s ease;"
   >
     <canvas
       id="fluid"

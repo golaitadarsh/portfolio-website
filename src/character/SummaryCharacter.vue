@@ -38,7 +38,30 @@ const props = withDefaults(defineProps<Props>(), { paused: false, showActions: t
 const emit = defineEmits<{
   (e: "loaded"): void;
   (e: "state", s: { ready: boolean; busy: boolean; pushing: boolean }): void;
+  /** Rig geometry became available — the parent should re-measure. */
+  (e: "metrics"): void;
 }>();
+
+/**
+ * Rig metrics, all expressed in CANVAS-HEIGHT units.
+ *
+ * The camera frames the body by HEIGHT (fitH below), so every distance the
+ * character occupies on screen is a fixed multiple of the canvas height and
+ * nothing else. The projection confirms it algebraically: horizontal NDC
+ * carries a 1/aspect, and px = ndc · canvasW/2 = ndc · canvasH · aspect/2, so
+ * aspect cancels. Publishing ratios instead of px is what makes the push-out
+ * land identically on a 13" laptop and a 27" monitor.
+ */
+export interface PushMetrics {
+  /** Lead-hand reach left of the canvas centre, ÷ canvas height. */
+  reachRatio: number;
+  /** Trailing-heel extent right of the canvas centre, ÷ canvas height. */
+  extentRatio: number;
+  /** Column px that advance the pushing clip by one second of its timeline. */
+  pxPerClipSec: number;
+  /** Live canvas height in px (== the staged slot height). */
+  canvasH: number;
+}
 
 const canvasDiv = ref<HTMLDivElement | null>(null);
 const ready = ref(false);
@@ -61,6 +84,7 @@ let enterImpl: () => void = () => {};
 let setPushingImpl: (on: boolean) => void = () => {};
 let setPushTravelImpl: (px: number) => void = () => {};
 let playActionImpl: (name: string) => void = () => {};
+let getPushMetricsImpl: () => PushMetrics | null = () => null;
 defineExpose({
   enter: () => enterImpl(),
   setPushing: (on: boolean) => setPushingImpl(on),
@@ -70,6 +94,10 @@ defineExpose({
    *  stops, and stride backwards on a retrace. */
   setPushTravel: (px: number) => setPushTravelImpl(px),
   playAction: (name: string) => playActionImpl(name),
+  /** Live rig geometry for the page's push choreography, or null until the
+   *  model and the pushing clip have both streamed in (or forever, if WebGL
+   *  is unavailable — the caller falls back to its own constants). */
+  getPushMetrics: (): PushMetrics | null => getPushMetricsImpl(),
 });
 
 // Mirror live state to the parent (drives its external action buttons).
@@ -208,12 +236,22 @@ onMounted(() => {
   }
 
   // Scroll-scrubbed stride: the parent reports the push-out's absolute
-  // travel in px, and the clip's playhead is a pure function of it —
-  // PUSH_PX_PER_SEC px of column travel advances the clip by one second of
-  // its 1× timeline (wrapping over the loop). No playback clock at all:
+  // travel in px, and the clip's playhead is a pure function of it — one
+  // second of the clip's 1× timeline per PUSH_CANVASH_PER_SEC of canvas
+  // height travelled (wrapping over the loop). No playback clock at all:
   // scroll fast = fast strides, stop = frozen mid-stride, retrace = strides
   // in reverse. Legs and columns can never drift apart.
-  const PUSH_PX_PER_SEC = 520; // column px per second of clip time — sets stride length
+  //
+  // Stride length is a property of the BODY, so the cadence has to be measured
+  // in body-sized units. It used to be a flat 520 px/sec, which meant the same
+  // scroll produced ~1.9× more gliding on a short laptop than on a tall
+  // monitor — the character is drawn 1.87× larger there, but the constant
+  // never noticed. 0.62 canvas-heights/sec is that same 520 px on a 1080p
+  // display, so the tuned look is preserved at the most common desktop height
+  // and now holds at every other one. Lower = more strides per scrolled px.
+  const PUSH_CANVASH_PER_SEC = 0.62;
+  const canvasH = () => Math.max(1, renderer.domElement.clientHeight || rect.height);
+  const pushPxPerSec = () => PUSH_CANVASH_PER_SEC * canvasH();
   let pushAction: THREE.AnimationAction | null = null;
   let pushTravel = 0;
   setPushTravelImpl = (px: number) => {
@@ -250,6 +288,87 @@ onMounted(() => {
     }
   };
 
+  // ── rig metrics ────────────────────────────────────────────────────
+  // How far the character actually extends on either side of the canvas
+  // centre while pushing. The page used to guess this with a hand-picked
+  // "0.20 of the slot height"; the rig's real lead-hand reach is 0.54, so he
+  // walked ~0.27 slot-heights too far and shoved his hand through the text.
+  // Nothing here is a constant to maintain — it is sampled from the clip.
+  let padRatio = 0;
+  let pushExtents: { reachRatio: number; extentRatio: number } | null = null;
+
+  function measurePushExtents(clip: THREE.AnimationClip) {
+    if (!charRoot) return null;
+    const bones: THREE.Object3D[] = [];
+    charRoot.traverse((o) => {
+      if ((o as THREE.Bone).isBone) bones.push(o);
+    });
+    if (bones.length === 0) return null;
+
+    // Snapshot every bone: the live idle clip has its Head/Neck tracks
+    // stripped, so those bones would keep whatever this pass leaves behind.
+    // (Nothing renders mid-function — JS is single-threaded — so the restore
+    // is complete before the next frame either way.)
+    const snap = bones.map((b) => ({
+      b,
+      p: b.position.clone(),
+      q: b.quaternion.clone(),
+      s: b.scale.clone(),
+    }));
+    const yaw0 = charRoot.rotation.y;
+
+    // A private mixer so the live one's bindings and weights are untouched.
+    const sampler = new THREE.AnimationMixer(charRoot);
+    const act = sampler.clipAction(clip);
+    act.play();
+    charRoot.rotation.y = PUSH_YAW; // measure in the pose he'll hold
+
+    const v = new THREE.Vector3();
+    let minX = Infinity;
+    let maxX = -Infinity;
+    const STEPS = 96; // whole stride cycle — we want the extreme, not a frame
+    for (let i = 0; i < STEPS; i++) {
+      act.time = (i / STEPS) * clip.duration;
+      sampler.update(0); // applies the pose at act.time
+      charRoot.updateWorldMatrix(true, true);
+      for (const b of bones) {
+        v.setFromMatrixPosition(b.matrixWorld).project(camera);
+        if (v.x < minX) minX = v.x;
+        if (v.x > maxX) maxX = v.x;
+      }
+    }
+
+    act.stop();
+    sampler.uncacheRoot(charRoot);
+    for (const s of snap) {
+      s.b.position.copy(s.p);
+      s.b.quaternion.copy(s.q);
+      s.b.scale.copy(s.s);
+    }
+    charRoot.rotation.y = yaw0;
+    charRoot.updateWorldMatrix(true, true);
+
+    if (!isFinite(minX) || !isFinite(maxX)) return null;
+    // ndc → px is ndc · canvasW/2, and canvasW = canvasH · aspect while ndc.x
+    // already carries a 1/aspect — so halving gives canvas-HEIGHT units, the
+    // one frame of reference that is the same on every display.
+    const half = camera.aspect / 2;
+    return {
+      reachRatio: -minX * half + padRatio,
+      extentRatio: maxX * half + padRatio,
+    };
+  }
+
+  getPushMetricsImpl = () => {
+    if (!pushExtents) return null;
+    return {
+      reachRatio: pushExtents.reachRatio,
+      extentRatio: pushExtents.extentRatio,
+      pxPerClipSec: pushPxPerSec(),
+      canvasH: canvasH(),
+    };
+  };
+
   let pendingEnter = false;
   enterImpl = () => {
     if (entered) return;
@@ -275,7 +394,13 @@ onMounted(() => {
     camera.aspect = r.width / r.height;
     camera.updateProjectionMatrix();
   };
-  window.addEventListener("resize", onResize);
+  // ResizeObserver, not window.resize: the staged layout sizes the character
+  // column from the rig (see --sum-char-col), so the canvas can change width
+  // without the window ever changing. A window-only listener left the canvas
+  // at its old size until the next real resize, and every measurement the
+  // page takes off this element would have been stale.
+  const sizeObs = new ResizeObserver(onResize);
+  sizeObs.observe(container);
 
   loadCharacter().then(async (gltf) => {
     if (!gltf) return;
@@ -308,6 +433,11 @@ onMounted(() => {
     camera.position.set(center.x, center.y + size.y * 0.04, center.z + dist);
     camera.lookAt(center.x, center.y + size.y * 0.02, center.z);
     camera.updateProjectionMatrix();
+
+    // Ratio the framing pad occupies on screen — reused below, because the
+    // same "bones stop at joints" caveat applies to the pushing hand: the
+    // last finger joint is not the fingertip.
+    padRatio = pad / fitH;
 
     charRoot = char;
     mixer = new THREE.AnimationMixer(char);
@@ -346,9 +476,18 @@ onMounted(() => {
       void playOnce("jump");
     }
 
-    // Prefetch the small action clips once idle is running.
+    // The page cannot place him against the summary text until it knows how
+    // far his arm actually reaches, so the pushing clip is fetched eagerly
+    // (not with the idle prefetch below) and measured the moment it lands.
+    void loadClip("pushing").then((clip) => {
+      if (!clip || pushExtents) return;
+      pushExtents = measurePushExtents(clip);
+      if (pushExtents) emit("metrics");
+    });
+
+    // Prefetch the remaining action clips once idle is running.
     const prefetch = () =>
-      (["jump", "back_flip", "dancing", "push_ups", "pushing"] as ClipName[]).forEach(
+      (["jump", "back_flip", "dancing", "push_ups"] as ClipName[]).forEach(
         (n) => void loadClip(n)
       );
     if (typeof window.requestIdleCallback === "function") {
@@ -389,7 +528,7 @@ onMounted(() => {
       // over the loop. timeScale is 0, so mixer.update never advances it —
       // it only drives the crossfade weights.
       const dur = pushAction.getClip().duration;
-      const t = (pushTravel / PUSH_PX_PER_SEC) % dur;
+      const t = (pushTravel / pushPxPerSec()) % dur;
       pushAction.time = t < 0 ? t + dur : t;
     }
     if (mixer) mixer.update(delta);
@@ -409,9 +548,9 @@ onMounted(() => {
     cancelAnimationFrame(rafId);
     visObs.disconnect();
     document.removeEventListener("mousemove", onMouseMove);
-    window.removeEventListener("resize", onResize);
     disposeCharacter();
     light.dispose();
+    sizeObs.disconnect();
     scene.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if (mesh.geometry) mesh.geometry.dispose();
@@ -490,16 +629,17 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 .sc-actions-hint {
-  font: 500 0.62rem/1 var(--f-mono, monospace);
+  font: 600 0.62rem/1 var(--f-mono, monospace);
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--ink-faint, #999);
+  color: var(--ink-soft, #555);
   margin-right: 0.35rem;
 }
 .sc-btn {
   appearance: none;
-  border: 1px solid var(--rule, #ddd);
-  background: transparent;
+  /* Hairline --rule pills disappear on white — these have to look pressable. */
+  border: 1.5px solid rgba(9, 9, 11, 0.45);
+  background: var(--paper-2, #f6f6f4);
   color: var(--ink, #111);
   font: 600 0.68rem/1 var(--f-mono, monospace);
   letter-spacing: 0.14em;

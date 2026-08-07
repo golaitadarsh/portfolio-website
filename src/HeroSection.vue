@@ -706,7 +706,13 @@ onMounted(() => {
 .hero {
   position: relative;
   width: 100%;
+  /* svh, matching the #hero / .hs-sticky stage this plate sits in. On iOS
+     Safari 100vh is the URL-bar-collapsed height, so a vh-sized plate stood
+     ~90px taller than its clipping box (bottom of the photo and the scroll
+     cue cut off) and then re-sized mid-scroll as the bar collapsed, forcing
+     a WebGL resize each time. svh == vh on desktop, so nothing moves there. */
   height: 100vh;
+  height: 100svh;
   overflow: hidden;
   background: #fff;
   cursor: none;
@@ -745,8 +751,10 @@ onMounted(() => {
   --ink-soft:   rgba(9, 9, 11, 0.62);
   --ink-faint:  rgba(9, 9, 11, 0.36);
   --rule:       rgba(9, 9, 11, 0.14);
-  --gutter-x:   clamp(1.5rem, 5vw, 4rem);
-  --gutter-y:   clamp(1.5rem, 4vh, 2.75rem);
+  /* --gutter-x / --gutter-y intentionally NOT redeclared here: they inherit
+     from :root in style.css, which locks them to fixed rem from 1024px up so
+     the hero's edge anchors sit at the same offsets on a laptop and on an
+     external monitor. Shadowing them here would reinstate the vh drift. */
 
   --f-sans: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
   --f-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
@@ -763,7 +771,7 @@ onMounted(() => {
   top: 0;
   left: 0;
   right: 0;
-  padding: clamp(1rem, 2.4vh, 1.6rem) clamp(1rem, 2.6vw, 2rem) 0;
+  padding: var(--pad-topbar-y) clamp(1rem, 2.6vw, 2rem) 0;
   display: flex;
   align-items: flex-start;
   justify-content: flex-end;
@@ -1045,7 +1053,29 @@ onMounted(() => {
     bottom: auto;
     top: calc(var(--gutter-y) + 1rem);
     width: auto;
-    height: clamp(9rem, 28vh, 15rem);
+    height: clamp(12rem, 33vh, 18rem);
+    /* Radial mask feathers left/right but cuts a visible band straight across
+       the face at the bottom. The type sits at the top of the phone hero, so a
+       long top-down fade is the natural read and never draws an edge. */
+    -webkit-mask-image: linear-gradient(to bottom,
+      rgba(0,0,0,0.97) 0%, rgba(0,0,0,0.94) 40%,
+      rgba(0,0,0,0.6) 66%, rgba(0,0,0,0.24) 84%, rgba(0,0,0,0) 100%);
+            mask-image: linear-gradient(to bottom,
+      rgba(0,0,0,0.97) 0%, rgba(0,0,0,0.94) 40%,
+      rgba(0,0,0,0.6) 66%, rgba(0,0,0,0.24) 84%, rgba(0,0,0,0) 100%);
+    /* On desktop the name sits in the empty gutter beside the face, so the
+       0.22 veil is only a whisper of lift over the DotField. At phone width the
+       photo fills the viewport and the name lands directly on dark hair —
+       #0A0A0A on near-black made "SH" and "GO" unreadable.
+       Two changes, phone-only. z-index: the scrim ships at 5, below the photo
+       canvas at 10, so it has never veiled the photo at all — lift it between
+       the canvas and the .overlay (70) that carries the type. Then raise the
+       veil itself; the radial mask still feathers it so it never reads as a
+       panel, and backdrop-filter now has the photo to sample. */
+    z-index: 20;
+    background: rgba(255, 255, 255, 0.72);
+    -webkit-backdrop-filter: blur(5px) saturate(0.94);
+            backdrop-filter: blur(5px) saturate(0.94);
   }
   .tagline-block { width: 100%; max-width: 100%; gap: 0.6rem; }
   .tagline       { white-space: normal; font-size: 0.58rem; letter-spacing: 0.12em; line-height: 1.45; }

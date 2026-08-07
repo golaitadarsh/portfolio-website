@@ -7,7 +7,13 @@ import MedalScrub from '../components/portfolio/MedalScrub.vue'
 import PorPhotoWall from '../components/portfolio/PorPhotoWall.vue'
 import type { WallPhoto } from '../components/portfolio/PorPhotoWall.vue'
 import TimedCards from '../components/portfolio/TimedCards.vue'
+import { useMobileNav } from '../composables/useMobileNav'
 import signatureSvgRaw from '../../assets/signature.svg?raw'
+
+// Phone-width nav sheet. Same <nav> markup as the desktop row — the scroll-spy
+// observer and the pin-landing click handler both bind to `.portfolio-topbar
+// .nav a[data-section]`, so collapsing it into a sheet changes nothing for them.
+const { open: navOpen, toggle: toggleNav, close: closeNav } = useMobileNav()
 
 import porConvocationImg from '../../assets/por/01-convocation-2022.jpg'
 import porTenderVisitImg from '../../assets/por/03-tender-visit-mess.jpg'
@@ -55,8 +61,27 @@ const signatureMarkup = (() => {
 
 const HeroCharacter = defineAsyncComponent(() => import('../character/HeroCharacter.vue'))
 const SummaryCharacter = defineAsyncComponent(() => import('../character/SummaryCharacter.vue'))
+const FluidCursor = defineAsyncComponent(() => import('../components/fluid-cursor/FluidCursor.vue'))
 
 const characterVisible = ref(false)
+
+// The fluid trail belongs to the hero plate (the dot-field reveal), not to the
+// whole page. It fades out with the hero overlay text and is fully gone before
+// the signature pen-draw begins at hero progress 0.42 — see applyHeroTransform.
+const FLUID_CURSOR_OFF_AT = 0.30
+const fluidCursorActive = ref(true)
+
+// …and only where there is a cursor. The sim also listens to touchmove, so on
+// a phone every scroll swipe splats dye and drags a colour smear up the page —
+// a cursor trail with no cursor, painting during the one gesture you make most.
+// Gating the mount (not just `active`) also keeps its chunk and its second
+// WebGL context off touch devices entirely.
+const pointerFine = ref(false)
+const finePointerMq = typeof window !== 'undefined'
+  ? window.matchMedia('(hover: hover) and (pointer: fine)')
+  : null
+const onFinePointer = (e: MediaQueryList | MediaQueryListEvent) => { pointerFine.value = e.matches }
+if (finePointerMq) onFinePointer(finePointerMq)
 
 // ────────────────────────────────────────────────────────────────────
 // Hero → Page-2 slot zoom-out levers.
@@ -380,6 +405,10 @@ function applyHeroTransform(force = false) {
   const driverEl = heroDriverRef.value
   driverEl?.style.setProperty('--hs-hero-t', t.toFixed(3))
   driverEl?.style.setProperty('--hs-resume-pe', t > 0.8 ? 'auto' : 'none')
+
+  // Same window as the hero overlay text: the trail reads as part of page 1,
+  // so it leaves when page 1 stops being the page you're on.
+  fluidCursorActive.value = t < FLUID_CURSOR_OFF_AT
 
   const textFade = smoothstep(heroZoom.textFadeStart, heroZoom.textFadeEnd, t)
   page1.style.setProperty('--hs-text-fade', `${textFade.toFixed(3)}`)
@@ -718,12 +747,22 @@ const sumStaged = ref(false)
 // competes with the hero's first-paint assets.
 const summaryNear = ref(false)
 
+// Set by setupSummaryStage — lets late-arriving facts (web fonts, the rig's
+// own geometry) re-run the push measurement instead of living with whatever
+// was true at setup time.
+let remeasureSummary: (() => void) | null = null
+
 // Live character state, emitted by SummaryCharacter — drives button states.
 const charState = reactive({ ready: false, busy: false, pushing: false })
 function onCharState(s: { ready: boolean; busy: boolean; pushing: boolean }) {
   charState.ready = s.ready
   charState.busy = s.busy
   charState.pushing = s.pushing
+}
+// The rig has measured its own reach — swap the fallback constants out for
+// the real numbers and re-place him against the text.
+function onCharMetrics() {
+  remeasureSummary?.()
 }
 function playCharAction(name: string) {
   summaryCharRef.value?.playAction?.(name)
@@ -754,12 +793,27 @@ const PUSH = {
                    // the text — ~1215px vs ~795px of travel); the taller pin
                    // gives the exit leg ~2400px of scroll so the text slide
                    // KEEPS the same px-per-scroll speed as before.
-  strugPx: 1020,   // fake clip-travel px fed during the struggle so his legs
-                   // drive against the ground while he holds position
-                   // (scaled with the struggle span — ~1.39 px of clip travel
-                   // per px of scroll — so the stride cadence stays the same)
-  reachFrac: 0.20, // lead-hand reach ahead of body center, fraction of slot height
+  strugSecs: 1.96, // seconds of pushing clip fed during the struggle so his
+                   // legs drive against the ground while he holds position.
+                   // In CLIP time, not px: px would mean a different number of
+                   // strides per display, which is the bug this whole block
+                   // was rewritten to kill. 1.96s is the old 1020px at the old
+                   // 520px/sec cadence, so the struggle reads as it always did.
   clearPad: 48,    // extra px past the left edge so nothing peeks back in
+  // Contact overlap — how far PAST the bare hand-meets-ink point he walks, as
+  // a fraction of the canvas HEIGHT (same frame of reference as reach/extent,
+  // so the closeness reads identically on every display). Zero looks like he
+  // is reaching at the text from arm's length; a small positive value plants
+  // the hand ON it. Kept well under reachFrac so the hand never crosses into
+  // the glyphs.
+  contactFrac: 0.035,
+  // ── fallbacks, used only until the rig reports its own geometry (and
+  //    forever if WebGL is unavailable, in which case nothing renders in the
+  //    slot anyway). Both are fractions of the CANVAS HEIGHT — see
+  //    SummaryCharacter's PushMetrics for why height is the only frame of
+  //    reference that survives a change of display.
+  reachFrac: 0.54,  // lead hand, left of canvas centre  (rig-measured 0.535)
+  extentFrac: 0.30, // trailing heel, right of centre    (rig-measured 0.302)
 }
 
 function setupSummaryStage(): (() => void) | null {
@@ -767,7 +821,8 @@ function setupSummaryStage(): (() => void) | null {
   if (!sec) return null
   const body = sec.querySelector<HTMLElement>('.summary-grid .body')
   const slot = sec.querySelector<HTMLElement>('.char-slot')
-  if (!body || !slot) return null
+  const pin = sec.querySelector<HTMLElement>('.summary-pin')
+  if (!body || !slot || !pin) return null
   const mqMotion = matchMedia('(prefers-reduced-motion: reduce)')
   let raf = 0
   let pushOn = false
@@ -784,8 +839,8 @@ function setupSummaryStage(): (() => void) | null {
   let sTarget = 0
   let lastT = 0
   const SCRUB_TAU = 160 // ms — bigger = softer/laggier, smaller = snappier
-  // Travel distances in px, measured from the real layout.
-  let apprPx = 0, exitPx = 0
+  // Travel distances in px, measured from the real layout + the real rig.
+  let apprPx = 0, exitPx = 0, strugPx = 0
 
   function choreo(v: number) {
     // Contact-locked choreography in three scrubbed phases: eased walk-in
@@ -812,26 +867,99 @@ function setupSummaryStage(): (() => void) | null {
     sec!.style.setProperty('--sum-char-x', `${(-(appr * apprPx + exit * exitPx)).toFixed(1)}px`)
   }
 
+  // Right edge of the rendered INK, not of the grid track.
+  //
+  // This one line is why the push looked right on an external monitor and
+  // drove his hand through the text on a laptop. `.body` is a `fr` track, so
+  // its width follows the viewport; the paragraphs inside are capped at
+  // `max-width: 58ch` and their font-size clamp tops out at 1.14rem around
+  // 1546px — past that the track keeps growing and the text does not.
+  // Measured dead band between the last glyph and the track edge: 56px at
+  // 1440x900, 267px at 1920x1080, 612px at 2560x1310. Walking to the track
+  // edge meant the wide screen had a cushion to absorb his reach and the
+  // laptop had none.
+  function textRightEdge(): number {
+    let right = -Infinity
+    const walk = document.createTreeWalker(body!, NodeFilter.SHOW_TEXT)
+    const range = document.createRange()
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (!n.nodeValue || !n.nodeValue.trim()) continue
+      range.selectNodeContents(n)
+      const rects = range.getClientRects()
+      for (let i = 0; i < rects.length; i++) {
+        // Ragged right: every line box is its own rect, so this lands on the
+        // longest line rather than on the paragraph's nominal width.
+        if (rects[i].width > 0 && rects[i].right > right) right = rects[i].right
+      }
+    }
+    return right === -Infinity ? body!.getBoundingClientRect().right : right
+  }
+
   function measure() {
     // Rects include the live transforms — subtract what we applied to
     // recover layout positions, so mid-push resizes re-measure correctly.
     const { appr, exit } = choreo(s)
-    const bodyR = body!.getBoundingClientRect()
-    const slotR = slot!.getBoundingClientRect()
     const bodyX = -exit * exitPx
     const charX = -(appr * apprPx + exit * exitPx)
-    const textRight = bodyR.right - bodyX
-    const slotCenter = (slotR.left + slotR.right) / 2 - charX
-    const reach = slotR.height * PUSH.reachFrac
-    // Walk-in ends with his lead hands at the text's right edge; the shove
-    // then carries text AND character together (same exitPx) far enough
-    // that BOTH fully clear the viewport's left edge at exit = 1 — he
-    // pushes the text off and follows it out before the pin releases.
-    // The character's clearance is measured from his slot's right edge at
-    // the contact position (layout right minus the walk-in he already did).
-    apprPx = Math.max(0, slotCenter - reach - textRight)
-    const slotRightAtContact = slotR.right - charX - apprPx
-    exitPx = Math.max(textRight, slotRightAtContact) + PUSH.clearPad
+
+    // The character's rendered size is a fixed multiple of his canvas HEIGHT
+    // (the camera frames him by height), so his column has to be height-driven
+    // too. As a width-driven `0.92fr` track it was 69px narrower than his
+    // outstretched arm on 1440x900 — the canvas clipped the pushing hand — and
+    // ~600px wider than he needs on a 2560 monitor, stranding him mid-stage.
+    // Written before the reads below so the reflow is already settled.
+    const m = summaryCharRef.value?.getPushMetrics?.() ?? null
+    const reachR = m?.reachRatio ?? PUSH.reachFrac
+    const extentR = m?.extentRatio ?? PUSH.extentFrac
+    const slotH = slot!.getBoundingClientRect().height
+    sec!.style.setProperty(
+      '--sum-char-col',
+      `${Math.round(2 * Math.max(reachR, extentR) * slotH)}px`
+    )
+
+    // Fit the copy to the pin, by measurement. The type used to step down on
+    // `@media (max-height: 840px)` — a proxy that knows nothing about how WIDE
+    // the text column ended up, which is what actually decides how tall the
+    // copy wraps. Result: the last paragraph fell out of the pin's
+    // overflow:hidden box at 1440x900, and 1371x796 / 1512x860 / 1920x1080 all
+    // sat within 1px of doing the same. Three passes because scaling the type
+    // re-wraps it, so line count (and therefore height) moves in steps.
+    const pinCS = getComputedStyle(pin!)
+    const availH =
+      pin!.clientHeight - parseFloat(pinCS.paddingTop) - parseFloat(pinCS.paddingBottom)
+    let fit = 1
+    sec!.style.setProperty('--sum-fit', '1')
+    for (let i = 0; i < 3 && availH > 0; i++) {
+      const need = body!.scrollHeight
+      if (need <= availH) break
+      // 0.7 floor: past that the copy is unreadable and clipping is the lesser
+      // evil — but nothing we can render on a staged desktop gets near it.
+      fit = Math.max(0.7, (fit * availH * 0.995) / need)
+      sec!.style.setProperty('--sum-fit', fit.toFixed(4))
+    }
+
+    const slotR = slot!.getBoundingClientRect()
+    // The canvas fills the slot exactly (its sibling action row is display:none
+    // while staged), and the camera centres him in it — so the slot's centre
+    // IS his body centre, and its height IS the canvas height.
+    const charCenter = (slotR.left + slotR.right) / 2 - charX
+    const reach = reachR * slotR.height
+    const extent = extentR * slotR.height
+    const textRight = textRightEdge() - bodyX
+
+    // Walk-in ends with his lead hand at the text's right edge; the shove then
+    // carries text AND character together (same exitPx) far enough that BOTH
+    // fully clear the viewport's left edge at exit = 1 — he pushes the text off
+    // and follows it out before the pin releases.
+    apprPx = Math.max(0, charCenter - reach - textRight + PUSH.contactFrac * slotR.height)
+    // His trailing heel is the rightmost ink in the character column at the
+    // contact position; that, not the empty track edge, is what has to clear.
+    const charRightAtContact = charCenter - apprPx + extent
+    exitPx = Math.max(textRight, charRightAtContact) + PUSH.clearPad
+    // Clip travel during the struggle, in the same px the scrub speaks — the
+    // rig reports how many px map to one second of its timeline, so the number
+    // of strides is identical on every display.
+    strugPx = PUSH.strugSecs * (m?.pxPerClipSec ?? slotR.height * 0.62)
   }
 
   // Layout READ — runs in the scroll event (before this frame's rAF writes)
@@ -853,7 +981,7 @@ function setupSummaryStage(): (() => void) | null {
     // REAL travel: he slides with the text at the same exitPx, so the clip
     // playhead matches his actual ground displacement — no skating.
     const { appr, strug, exit } = choreo(v)
-    return appr * apprPx + strug * PUSH.strugPx + exit * exitPx
+    return appr * apprPx + strug * strugPx + exit * exitPx
   }
 
   // Style WRITE — CSS-var publish + character scrub, no layout reads.
@@ -936,22 +1064,27 @@ function setupSummaryStage(): (() => void) | null {
       summaryCharRef.value?.setPushTravel?.(0)
     }
   }
+  // Anything that changes the layout or the rig's reported geometry after
+  // setup re-runs the measurement through here.
+  const remeasure = () => {
+    if (!sumStaged.value) return
+    measure()
+    onScroll()
+  }
+  remeasureSummary = remeasure
+
   mqMotion.addEventListener?.('change', apply)
   addEventListener('resize', apply, { passive: true })
   apply()
   // Web-font swap reflows the text column — re-measure once fonts settle.
-  document.fonts?.ready?.then(() => {
-    if (sumStaged.value) {
-      measure()
-      onScroll()
-    }
-  })
+  document.fonts?.ready?.then(remeasure)
   return () => {
     mqMotion.removeEventListener?.('change', apply)
     removeEventListener('resize', apply)
     removeEventListener('scroll', onScroll)
     io.disconnect()
     nearIo.disconnect()
+    if (remeasureSummary === remeasure) remeasureSummary = null
     if (raf) cancelAnimationFrame(raf)
   }
 }
@@ -1160,6 +1293,10 @@ function setupReveal(): (() => void) | null {
 }
 
 onMounted(() => {
+  // Input can change under a live page (iPad gaining a trackpad, a laptop
+  // folding into tablet mode) — follow it so the trail appears/disappears
+  // with the cursor rather than only on reload.
+  finePointerMq?.addEventListener?.('change', onFinePointer)
   // scrollRestoration is already pinned to 'manual' by the inline script in
   // index.html (runs before module evaluation) and again at module top above —
   // here we just snap to the top in case the browser still tried to restore.
@@ -1265,6 +1402,26 @@ onMounted(() => {
     navLinks.forEach((a) => a.removeEventListener('click', onNavClick))
   })
 
+  // "Return to hero" / brand → top of document.
+  //
+  // #hero is the Page-1 layer INSIDE .hs-sticky — `position: absolute` in a
+  // sticky box — so its document offset is wherever the sticky element is
+  // parked at that moment, which while the stage is pinned is the current
+  // scroll position. A native anchor jump therefore resolves to "here" and
+  // the link does nothing. The hero IS the top of the page, so scroll there
+  // explicitly. Covers the footer link, the topbar brand and any nav link
+  // pointing at #hero.
+  const heroLinks = document.querySelectorAll<HTMLAnchorElement>('a[href="#hero"]')
+  const onHeroLink = (e: Event) => {
+    e.preventDefault()
+    history.replaceState(history.state, '', '#hero')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  heroLinks.forEach((a) => a.addEventListener('click', onHeroLink))
+  sectionCleanups.push(() => {
+    heroLinks.forEach((a) => a.removeEventListener('click', onHeroLink))
+  })
+
   // HeroCharacter lives inside .hs-sticky (behind the doors). Warm it up
   // early so it's ready when the doors part — but AFTER first paint and the
   // hero's own assets. The old IntersectionObserver fired immediately (the
@@ -1301,6 +1458,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  finePointerMq?.removeEventListener?.('change', onFinePointer)
   sectionCleanups.forEach((fn) => fn())
   sectionCleanups.length = 0
   scrollSpy?.disconnect()
@@ -1335,12 +1493,23 @@ onBeforeUnmount(() => {
 
 <template>
   <header class="topbar portfolio-topbar">
-    <a href="#hero" class="brand">
+    <a href="#hero" class="brand" @click="closeNav">
       <span class="brand-dot"></span>
       ADARSH GOLAIT
       <span class="brand-sub">— Portfolio</span>
     </a>
-    <nav class="nav" aria-label="Primary">
+    <button
+      type="button"
+      class="nav-toggle"
+      :aria-expanded="navOpen"
+      aria-controls="primary-nav"
+      :aria-label="navOpen ? 'Close menu' : 'Open menu'"
+      @click="toggleNav"
+    >
+      <span class="bars" aria-hidden="true"></span>
+      <span>{{ navOpen ? 'Close' : 'Menu' }}</span>
+    </button>
+    <nav id="primary-nav" class="nav" :class="{ 'is-open': navOpen }" aria-label="Primary" @click="closeNav">
       <a href="#education" data-section="education"><span class="nav-num">01</span><span class="nav-label">Education</span></a>
       <a href="#experience" data-section="experience"><span class="nav-num">02</span><span class="nav-label">Experience</span></a>
       <a href="#corporate" data-section="corporate"><span class="nav-num">03</span><span class="nav-label">Projects</span></a>
@@ -1376,7 +1545,7 @@ onBeforeUnmount(() => {
             <span class="cr-top">— Meet Adarsh</span>
             <div></div>
             <div class="cr-bottom">
-              <h2 class="cr-headline">A <em>moving</em><br />operator — not a still one.</h2>
+              <h2 class="cr-headline">A <em>moving</em> operator — on a mission to fuel the next generation of builders.</h2>
               <div class="cr-meta-stack">
                 <p class="cr-hint"><span class="cr-hint-dot" aria-hidden="true"></span>Move your cursor — he follows</p>
                 <p class="cr-meta">Scroll to enter the work →</p>
@@ -1539,7 +1708,7 @@ onBeforeUnmount(() => {
              component hides its internal text buttons. Non-staged (mobile /
              reduced motion): the component shows its own buttons. -->
         <div class="char-slot">
-          <SummaryCharacter v-if="summaryNear" ref="summaryCharRef" :show-actions="!sumStaged" @state="onCharState" />
+          <SummaryCharacter v-if="summaryNear" ref="summaryCharRef" :show-actions="!sumStaged" @state="onCharState" @metrics="onCharMetrics" />
         </div>
         <div
           v-if="sumStaged"
@@ -1547,39 +1716,46 @@ onBeforeUnmount(() => {
           :class="{ 'is-live': charState.ready }"
           aria-label="Character actions"
         >
-          <span class="sum-act-hint" aria-hidden="true">Make him move</span>
-          <button type="button" class="sum-act" :disabled="charState.busy || charState.pushing" @click="playCharAction('jump')">
-            <span class="sum-act-btn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M12 19V5" /><path d="m5 12 7-7 7 7" />
-              </svg>
-            </span>
-            <span class="sum-act-label">Jump</span>
-          </button>
-          <button type="button" class="sum-act" :disabled="charState.busy || charState.pushing" @click="playCharAction('back_flip')">
-            <span class="sum-act-btn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M3 12a9 9 0 1 1 3.6 7.2" /><path d="M3 22v-6h6" />
-              </svg>
-            </span>
-            <span class="sum-act-label">Flip</span>
-          </button>
-          <button type="button" class="sum-act" :disabled="charState.busy || charState.pushing" @click="playCharAction('dancing')">
-            <span class="sum-act-btn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
-              </svg>
-            </span>
-            <span class="sum-act-label">Dance</span>
-          </button>
-          <button type="button" class="sum-act" :disabled="charState.busy || charState.pushing" @click="playCharAction('push_ups')">
-            <span class="sum-act-btn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M4 14h2l2-3 3 5 3-7 2 5h4" /><path d="M3 19h18" />
-              </svg>
-            </span>
-            <span class="sum-act-label">Push-ups</span>
-          </button>
+          <!-- Bordered control surface: four loose icon circles on white paper
+               read as decoration. A panel with a lime edge reads as something
+               you operate. -->
+          <div class="sum-act-panel">
+            <span class="sum-act-hint"><span class="sum-act-bar" aria-hidden="true"></span>Make him move — pick one</span>
+            <div class="sum-act-row">
+              <button type="button" class="sum-act" style="--i: 0" :disabled="charState.busy || charState.pushing" @click="playCharAction('jump')">
+                <span class="sum-act-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 19V5" /><path d="m5 12 7-7 7 7" />
+                  </svg>
+                </span>
+                <span class="sum-act-label">Jump</span>
+              </button>
+              <button type="button" class="sum-act" style="--i: 1" :disabled="charState.busy || charState.pushing" @click="playCharAction('back_flip')">
+                <span class="sum-act-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 12a9 9 0 1 1 3.6 7.2" /><path d="M3 22v-6h6" />
+                  </svg>
+                </span>
+                <span class="sum-act-label">Flip</span>
+              </button>
+              <button type="button" class="sum-act" style="--i: 2" :disabled="charState.busy || charState.pushing" @click="playCharAction('dancing')">
+                <span class="sum-act-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+                  </svg>
+                </span>
+                <span class="sum-act-label">Dance</span>
+              </button>
+              <button type="button" class="sum-act" style="--i: 3" :disabled="charState.busy || charState.pushing" @click="playCharAction('push_ups')">
+                <span class="sum-act-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M4 14h2l2-3 3 5 3-7 2 5h4" /><path d="M3 19h18" />
+                  </svg>
+                </span>
+                <span class="sum-act-label">Push-ups</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
       </div>
@@ -1668,7 +1844,7 @@ onBeforeUnmount(() => {
                   <span class="when">July, 2023 — April, 2025 · Mumbai</span>
                 </div>
               </div>
-              <p class="xp-summary">Sole accountable owner of 9 quarterly production models. Architected the modular PySpark forecasting framework adopted unmodified by an external TCS engineering team.</p>
+              <p class="xp-summary">Architected a modular PySpark framework adopted across multiple production systems, reduced a key profitability pipeline turnaround by 90%, and developed a unified profitability layer spanning 6 crore accounts and 30+ products. Led an 18-month automation program involving four internal teams and an external engineering team, and independently sustained the full modelling portfolio through a complete team transition with zero delivery disruptions.</p>
               <div class="xp-stats">
                 <div class="cell"><span class="k">CCPS turnaround</span><span class="v">−90% · 3 hrs</span></div>
                 <div class="cell"><span class="k">Models owned</span><span class="v">9 quarterly</span></div>
@@ -1688,10 +1864,10 @@ onBeforeUnmount(() => {
                   <span class="when">May, 2022 — July, 2022 · Ahmedabad</span>
                 </div>
               </div>
-              <p class="xp-summary">Reverse-engineered 10+ competing hardware products, ran rapid prototyping concept-to-build (CAD, laser, MDF, 3D print), and managed on-ground vendor sourcing end-to-end.</p>
+              <p class="xp-summary">Reverse-engineered 10+ competing STEM and consumer hardware products, managed 4+ concurrent hardware development workstreams from concept to physical prototype, and coordinated external vendors across laser cutting, 3D printing, packaging, and manufacturing — on-ground vendor sourcing and pre-production execution for a consumer hardware company.</p>
               <div class="xp-stats">
                 <div class="cell"><span class="k">Competitor SKUs</span><span class="v">10+ analysed</span></div>
-                <div class="cell"><span class="k">Prototyping</span><span class="v">Concept → build</span></div>
+                <div class="cell"><span class="k">Workstreams</span><span class="v">4+ concurrent</span></div>
               </div>
             </article>
 
@@ -1699,7 +1875,7 @@ onBeforeUnmount(() => {
               <span class="xp-index" aria-hidden="true">03</span>
               <p class="xp-panel-co"><mark class="co-mark">Tata Steel</mark></p>
               <header class="xp-head">
-                <span class="xp-badge">Vocational Training · Live Plant</span>
+                <span class="xp-badge">Vocational Training · Industrial Systems</span>
                 <h3 class="xp-role">Industrial Systems Exposure</h3>
               </header>
               <div class="xp-datelines">
@@ -1708,7 +1884,7 @@ onBeforeUnmount(() => {
                   <span class="when">May, 2021 — July, 2021 · Virtual</span>
                 </div>
               </div>
-              <p class="xp-summary">Studied bulk-material handling at a live plant — belt-conveyor construction, drive arrangements, power-unit selection — and authored a decision-oriented technical report.</p>
+              <p class="xp-summary">Industrial systems exposure through a virtual programme — bulk-material handling, belt-conveyor construction, drive arrangements and power-unit selection — closed with a decision-oriented technical report.</p>
               <div class="xp-stats">
                 <div class="cell"><span class="k">Focus</span><span class="v">Bulk handling</span></div>
                 <div class="cell"><span class="k">Output</span><span class="v">Technical report</span></div>
@@ -1750,15 +1926,16 @@ onBeforeUnmount(() => {
           <span class="bix"><i></i>Student Council, IIT Gandhinagar</span>
           <div class="entry-head">
             <p class="entry-title">Welfare Secretary | Interim General Secretary | Interim Cultural Secretary</p>
-            <span class="entry-when">May, 2022 — April, 2023</span>
+            <span class="entry-when">May 2022 – April 2023</span>
           </div>
 
           <div class="split">
             <ul class="bullets">
-              <li><span class="nd"></span><span class="tx">Represented a <strong><span class="cnt">3,600+</span> student community</strong> on institute decisions spanning food services, laundry, healthcare, commercial establishments, hostels and student affairs — coordinating with administration, external vendors, and a <span class="cnt">25</span>-member council as the sole bridge between students and the institute.</span></li>
-              <li><span class="nd"></span><span class="tx">Student representative in <strong>procurement and tender evaluations</strong> for campus mess and laundry contracts — conducted operational due diligence across vendor facilities in Gujarat, Rajasthan and Delhi before contributing to institute-wide provider selection.</span></li>
-              <li><span class="nd"></span><span class="tx"><em>Designed a trial-based vendor selection system</em> via the Commercial Establishment &amp; Management Committee — engaged <span class="cnt">20+</span> national chains and regional players, ran live campus trials, and onboarded outlets on demonstrated performance rather than lowest-cost bids.</span></li>
-              <li><span class="nd"></span><span class="tx">Owned planning and governance of student initiatives with cumulative budgets exceeding <strong><span class="cnt">₹80+ lakh</span></strong> as a student signing authority; led Convocation 2022 through a <span class="cnt">68</span>-member team and IITGN's <span class="cnt">104</span>-member Inter-IIT Cultural Meet contingent end-to-end.</span></li>
+              <li><span class="nd"></span><span class="tx">Represented a <strong><span class="cnt">3600+</span> student community</strong> on institute decisions spanning food services, laundry, healthcare, commercial establishments, hostel accommodations, and student affairs; coordinated with institute administration, external vendors, and a <span class="cnt">25</span>-member council to drive campus-wide initiatives and address operational needs at scale.</span></li>
+              <li><span class="nd"></span><span class="tx">Served as the student representative in <strong>procurement and tender evaluations</strong> for campus mess and laundry contracts. Conducted operational due diligence across vendor facilities in Gujarat, Rajasthan, and Delhi, assessing service quality, execution capability, hygiene standards, and scalability before contributing to institute-wide provider selection decisions.</span></li>
+              <li><span class="nd"></span><span class="tx"><em>Led expansion of campus commercial services</em> through the Commercial Establishment &amp; Management Committee (CEMC), engaging with <span class="cnt">20+</span> national chains and regional players, running live campus trials, gathering structured student feedback, and supporting the onboarding of new outlets based on demonstrated performance rather than lowest-cost bids.</span></li>
+              <li><span class="nd"></span><span class="tx">Helped design and roll out a <strong>pay-as-you-use laundry model in partnership with Haier</strong>, introducing washer and dryer facilities for the student community and defining the student-facing commercial and fee structure alongside institute stakeholders.</span></li>
+              <li><span class="nd"></span><span class="tx">Owned planning and governance of student initiatives with cumulative budgets exceeding <strong><span class="cnt">₹80+ lakh</span></strong>, serving as a student signing authority across programmes ranging from institute events to large-scale student activities. Also led execution of Convocation 2022 through a <span class="cnt">68</span>-member team and managed IIT Gandhinagar's <span class="cnt">104</span>-member contingent for the Inter-IIT Cultural Meet, overseeing budgeting, logistics, travel, accommodation, and end-to-end on-ground coordination.</span></li>
             </ul>
 
             <div class="visual-rail">
@@ -1771,15 +1948,15 @@ onBeforeUnmount(() => {
           <span class="bix"><i></i>Welfare Council, IIT Gandhinagar</span>
           <div class="entry-head">
             <p class="entry-title">Coordinator for Commercial Outlets</p>
-            <span class="entry-when">May, 2021 — April, 2022</span>
+            <span class="entry-when">May, 2021 – April, 2022</span>
           </div>
 
           <ul class="bullets">
             <li><span class="nd"></span><span class="tx">Identified and assessed <strong><span class="cnt">20+</span> vendor operators</strong> across food and service categories through independent on-ground outreach and capability assessments spanning national chains and regional operators.</span></li>
-            <li><span class="nd"></span><span class="tx">Designed and implemented a <em>data-driven vendor evaluation framework</em> — ran multiple 1–2 day campus trials and collected structured community feedback to replace ad-hoc vendor selection with an evidence-based process.</span></li>
-            <li><span class="nd"></span><span class="tx">Onboarded and launched <strong><span class="cnt">6</span> food and service outlets</strong> serving a <span class="cnt">3,600+</span> student community — managing end-to-end negotiations, approvals, scheduling, and operational go-live.</span></li>
-            <li><span class="nd"></span><span class="tx">Hosted an institute-wide ice cream social for <strong><span class="cnt">4,500+</span> students, faculty, staff and service personnel</strong> — from vendor selection and procurement to on-ground execution.</span></li>
-            <li><span class="nd"></span><span class="tx">Led multiple blood donation drives with GCRI and Ahmedabad Civil Hospital — coordinated <span class="cnt">400+</span> registrations via slot-based crowd management, the institute's highest post-pandemic collection.</span></li>
+            <li><span class="nd"></span><span class="tx">Designed and implemented a <em>data-driven vendor evaluation framework</em>, running multiple 1–2 day campus trials and collecting structured community feedback to replace ad-hoc vendor selection with an evidence-based evaluation process.</span></li>
+            <li><span class="nd"></span><span class="tx">Onboarded and launched <strong><span class="cnt">6</span> food and service outlets</strong> serving a <span class="cnt">3600+</span> student community by managing end-to-end vendor negotiations, approvals, scheduling, and operational go-live for campus commercial outlets.</span></li>
+            <li><span class="nd"></span><span class="tx">Hosted an institute-wide ice cream social for <strong><span class="cnt">4,500+</span> students, faculty, staff, and service personnel</strong>, managing everything from vendor selection and procurement to on-ground execution and seamless service for the entire community.</span></li>
+            <li><span class="nd"></span><span class="tx">Led multiple blood donation drives in partnership with GCRI and Ahmedabad Civil Hospital, coordinating <span class="cnt">400+</span> registrations through slot-based crowd management and resulting in the institute's highest post-pandemic blood collection.</span></li>
           </ul>
         </article>
 
@@ -1950,6 +2127,10 @@ onBeforeUnmount(() => {
       </div>
     </div>
   </footer>
+
+  <!-- Hero-only pointer trail. Fixed overlay, pointer-events:none — gated so
+       it disappears once the hero plate has zoomed away. -->
+  <FluidCursor v-if="pointerFine" :active="fluidCursorActive" />
 </template>
 
 <style scoped>
@@ -1973,11 +2154,13 @@ onBeforeUnmount(() => {
 }
 .portfolio-topbar .nav a.is-active::after { display: none; }
 @media (max-width: 720px) {
-  /* Six section links wrap to three rows at phone width and eat a third of
-     the screen. Hide them — the page is a single scroll on mobile and the
-     brand mark stays as the home anchor. (Scoped to the portfolio topbar;
-     the standalone hero route keeps its 4-link nav.) */
-  .portfolio-topbar .nav { display: none; }
+  /* Six section links wrap to three rows at phone width, so below 720px the
+     nav is presented as a sheet behind the .nav-toggle button (rules live in
+     style.css, shared with the detail-route topbar). The scroll-spy underline
+     is an absolutely-positioned ::before against a baseline row — in the
+     stacked sheet it draws across the link, so the sheet marks the active
+     item with the accent chip on .nav-num instead. */
+  .portfolio-topbar .nav a.is-active::before { display: none; }
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -2497,11 +2680,16 @@ main > section.section {
   align-items: end;
   gap: 1rem;
 }
+/* Sized for the long form of the line ("…on a mission to fuel the next
+   generation of builders", ~73 chars): the old 18ch/4.5rem setting was tuned
+   for a 33-char line and pushed this one to five oversized lines that
+   overflowed the overlay's bottom row. 24ch + a lower clamp ceiling lands it
+   at three balanced lines on desktop without shrinking it into body copy. */
 .hs-sticky .cr-headline {
-  font: 900 clamp(2rem, 5vw, 4.5rem)/0.95 var(--f-sans);
-  letter-spacing: -0.045em;
+  font: 900 clamp(1.5rem, 3.1vw, 2.9rem)/1 var(--f-sans);
+  letter-spacing: -0.04em;
   text-transform: uppercase;
-  max-width: 18ch;
+  max-width: 24ch;
   text-wrap: balance;
 }
 .hs-sticky .cr-headline em {
@@ -2826,8 +3014,20 @@ main > section.section {
                          text during the shove (he rides the push out)
      --sum-walk-x  px    walk-in term alone — set dressing counter-translates
                          against this so the set stays put under his stride
+     --sum-char-col px   width of the character column — rig-derived, see the
+                         grid rule below
+     --sum-fit     0..1  measured type multiplier that keeps the copy inside
+                         the pin whatever width the character column left it
    Non-staged: plain stacked flow, character below text. */
-#summary { --sum-appr: 0; --sum-exit: 0; --sum-body-x: 0px; --sum-char-x: 0px; --sum-walk-x: 0px; }
+#summary {
+  --sum-appr: 0; --sum-exit: 0; --sum-body-x: 0px; --sum-char-x: 0px; --sum-walk-x: 0px;
+  /* First-paint estimate only; JS overwrites it with the exact rig width on
+     the first measure. 82vh approximates 1.07 x the slot height across the
+     desktop range (the slot is the viewport minus the topbar, the pin padding
+     and the fixed-height action panel). The 52vw guard keeps a tall, narrow
+     window from starving the text column. */
+  --sum-char-col: min(82vh, 52vw);
+}
 #summary.sum-staged { height: 600vh; padding: 0; }
 #summary .summary-pin { min-height: 0; }
 #summary.sum-staged .summary-pin {
@@ -2854,7 +3054,18 @@ main > section.section {
    instead of text crammed against the pin's top edge. Short viewports get
    a tighter type scale below so centering never clips inside the pin's
    overflow:hidden. */
-#summary.sum-staged .summary-grid { align-items: stretch; height: 100%; }
+#summary.sum-staged .summary-grid {
+  align-items: stretch;
+  height: 100%;
+  /* The character column is HEIGHT-driven, because the camera frames him by
+     height: his rendered silhouette is a fixed multiple of the canvas height
+     and owes nothing to the viewport width. Sizing it as a width-driven
+     `0.92fr` track meant the canvas clipped his outstretched pushing arm at
+     every desktop size we measured (69px lost at 1440x900, 51px at 1920x1080)
+     while simultaneously stranding him ~600px from the text on a 2560 monitor.
+     JS sets --sum-char-col from the rig's own measured reach. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, var(--sum-char-col));
+}
 #summary.sum-staged .body {
   display: flex;
   flex-direction: column;
@@ -2863,10 +3074,18 @@ main > section.section {
   padding-top: 0;
 }
 /* Pinned stage caps the display type a step below the scroll-header scale —
-   the title shares the viewport with four paragraphs and the character. */
+   the title shares the viewport with four paragraphs and the character.
+   Everything here is multiplied by --sum-fit, the measured fit-to-pin factor
+   JS publishes (see measure()): the clamps set the intent, the multiplier
+   guarantees the copy actually lands inside the overflow:hidden pin whatever
+   width the character column left for it. It is 1 whenever the copy fits. */
 #summary.sum-staged .section-title {
-  font-size: clamp(2.4rem, 4.8vw, 4.2rem);
-  margin-bottom: clamp(1rem, 2.6vh, 1.8rem);
+  font-size: calc(clamp(2.4rem, 4.8vw, 4.2rem) * var(--sum-fit, 1));
+  margin-bottom: calc(clamp(1rem, 2.6vh, 1.8rem) * var(--sum-fit, 1));
+}
+#summary.sum-staged .body p {
+  font-size: calc(clamp(1rem, 1.18vw, 1.14rem) * var(--sum-fit, 1));
+  margin-bottom: calc(1.15rem * var(--sum-fit, 1));
 }
 #summary .body p {
   font: 400 clamp(1rem, 1.18vw, 1.14rem)/1.62 var(--f-sans);
@@ -2878,10 +3097,18 @@ main > section.section {
 #summary .body p:last-child { margin-bottom: 0; }
 #summary .body p strong { color: var(--ink); font-weight: 600; }
 #summary .body p em { font-style: normal; background: var(--accent); color: var(--accent-ink); padding: 0 0.16em; }
-/* Short pins: shave the type before it can clip inside overflow:hidden. */
+/* Short pins start from a tighter scale so --sum-fit rarely has to do anything
+   visible — this is the pre-JS default, not the guarantee. */
 @media (max-height: 840px) {
-  #summary.sum-staged .section-title { font-size: clamp(2.1rem, 4.2vw, 3.4rem); margin-bottom: 1rem; }
-  #summary.sum-staged .body p { font-size: clamp(0.92rem, 1.05vw, 1.02rem); line-height: 1.52; margin-bottom: 0.85rem; }
+  #summary.sum-staged .section-title {
+    font-size: calc(clamp(2.1rem, 4.2vw, 3.4rem) * var(--sum-fit, 1));
+    margin-bottom: calc(1rem * var(--sum-fit, 1));
+  }
+  #summary.sum-staged .body p {
+    font-size: calc(clamp(0.92rem, 1.05vw, 1.02rem) * var(--sum-fit, 1));
+    line-height: 1.52;
+    margin-bottom: calc(0.85rem * var(--sum-fit, 1));
+  }
 }
 #summary .summary-char {
   height: min(72vh, 640px);
@@ -2956,9 +3183,7 @@ main > section.section {
 #summary .summary-actions {
   flex: 0 0 auto;
   display: flex;
-  flex-wrap: wrap;
   justify-content: center;
-  gap: clamp(1rem, 1.8vw, 1.7rem);
   padding-top: clamp(0.7rem, 1.6vh, 1.2rem);
   opacity: 0;
   transform: translateY(10px);
@@ -2970,15 +3195,43 @@ main > section.section {
   transform: none;
   pointer-events: auto;
 }
-.sum-act-hint {
-  flex: 1 1 100%;
-  text-align: center;
-  font: 500 0.6rem/1 var(--f-mono);
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  margin-bottom: 0.35rem;
+/* Control surface. Four loose circles on white paper read as ornament — the
+   hairline box + lime edge says "this is a panel you operate". */
+.sum-act-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.8rem clamp(1rem, 2vw, 1.6rem) 0.9rem;
+  padding-left: calc(clamp(1rem, 2vw, 1.6rem) + 6px);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  box-shadow: 0 8px 26px -18px rgba(9, 9, 11, 0.55);
 }
+.sum-act-panel::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 6px;
+  background: var(--accent);
+}
+.sum-act-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: clamp(0.9rem, 1.7vw, 1.5rem);
+}
+.sum-act-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font: 600 0.6rem/1 var(--f-mono);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.sum-act-bar { width: 16px; height: 2px; background: var(--accent); flex-shrink: 0; }
 .sum-act {
   appearance: none;
   background: none;
@@ -2991,29 +3244,30 @@ main > section.section {
   cursor: pointer;
   color: var(--ink);
 }
+.sum-act:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
 .sum-act-btn {
-  width: 46px;
-  height: 46px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
-  /* A hair darker than --rule: 1px hairlines on white read as decoration,
-     not buttons. These must pass the obviously-clickable test at a glance. */
-  border: 1px solid rgba(16, 19, 10, 0.28);
-  background: #fff;
+  /* Well past --rule: 1px hairlines on white read as decoration, not buttons.
+     These must pass the obviously-clickable test at a glance. */
+  border: 1.5px solid rgba(9, 9, 11, 0.5);
+  background: var(--paper-2);
   display: grid;
   place-items: center;
   transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease,
     transform 0.2s ease, box-shadow 0.2s ease;
-  box-shadow: 0 1px 2px rgba(16, 19, 10, 0.07);
+  box-shadow: 0 1px 2px rgba(9, 9, 11, 0.08);
 }
 .sum-act-btn svg {
-  width: 19px;
-  height: 19px;
+  width: 20px;
+  height: 20px;
 }
 .sum-act-label {
   font: 600 0.58rem/1 var(--f-mono);
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--ink-soft);
   transition: color 0.2s ease;
 }
 .sum-act:hover:not(:disabled) .sum-act-btn {
@@ -3025,6 +3279,21 @@ main > section.section {
 .sum-act:hover:not(:disabled) .sum-act-label { color: var(--ink); }
 .sum-act:active:not(:disabled) .sum-act-btn { transform: translateY(-1px) scale(0.96); }
 .sum-act:disabled { cursor: default; opacity: 0.35; }
+
+/* One-time staggered ring pulse the moment the character goes live — the
+   panel announces itself once, then holds still. */
+#summary .summary-actions.is-live .sum-act-btn {
+  animation: sum-act-attract 1.5s ease-out calc(var(--i, 0) * 0.1s) 3;
+}
+@keyframes sum-act-attract {
+  0%   { box-shadow: 0 1px 2px rgba(9,9,11,0.08), 0 0 0 0 rgba(219,254,82,0); }
+  14%  { box-shadow: 0 1px 2px rgba(9,9,11,0.08), 0 0 0 0 rgba(219,254,82,0.9); }
+  70%  { box-shadow: 0 1px 2px rgba(9,9,11,0.08), 0 0 0 14px rgba(219,254,82,0); }
+  100% { box-shadow: 0 1px 2px rgba(9,9,11,0.08), 0 0 0 0 rgba(219,254,82,0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #summary .summary-actions.is-live .sum-act-btn { animation: none; }
+}
 
 /* ─── two-column layouts ─── */
 .split {
@@ -3370,7 +3639,10 @@ main > section.section {
 
 /* footer / contact */
 .footer {
-  padding: clamp(3rem, 8vh, 6rem) var(--gutter-x);
+  /* Last block on the page — its bottom padding has to clear the iOS home
+     indicator, or the colophon sits under the swipe bar. 0 elsewhere. */
+  padding: var(--pad-head-top) var(--gutter-x)
+           calc(var(--pad-head-top) + env(safe-area-inset-bottom));
   background: var(--ink);
   color: var(--paper);
   border-top: 1px solid var(--ink);
@@ -4066,7 +4338,7 @@ main > section.section {
    (top padding, title→lede gap, lede→stage gap) so Corporate and Academic
    headers read identically */
 #corporate .stage-head {
-  padding: clamp(4rem, 12vh, 8rem) var(--gutter-x) clamp(2rem, 5vh, 3rem);
+  padding: var(--pad-section) var(--gutter-x) var(--gap-lede);
 }
 #corporate .stage-head .section-lede {
   font: 500 0.72rem/1.6 var(--f-mono);

@@ -162,7 +162,7 @@ import DetailLayout from '../layouts/DetailLayout.vue'
 }
 .bento .cell {
   background: var(--paper);
-  padding: clamp(1.25rem, 2.5vh, 1.75rem);
+  padding: var(--pad-box-xs);
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -242,7 +242,7 @@ import DetailLayout from '../layouts/DetailLayout.vue'
   color: var(--paper);
   grid-column: span 8;
   grid-row: span 2;
-  padding: clamp(2rem, 4vh, 3rem);
+  padding: var(--pad-head-bot);
   overflow: hidden;
 }
 @media (max-width: 980px) { .cell-hero { grid-column: span 12; } }
@@ -327,7 +327,7 @@ import DetailLayout from '../layouts/DetailLayout.vue'
   grid-template-columns: 9rem 1fr auto;
   gap: 2rem;
   align-items: baseline;
-  padding: clamp(3rem, 6vh, 4rem) var(--gutter-x) clamp(1.5rem, 3vh, 2rem);
+  padding: var(--pad-block) var(--gutter-x) var(--pad-box-sm);
 }
 @media (max-width: 720px) {
   .cat-head { grid-template-columns: 1fr; gap: 0.5rem; }
@@ -358,7 +358,7 @@ import DetailLayout from '../layouts/DetailLayout.vue'
   background: var(--paper);
 }
 .cert-strip .cert {
-  padding: clamp(1.5rem, 3vh, 2rem) clamp(1.25rem, 2.5vw, 2rem);
+  padding: var(--pad-box-sm) clamp(1.25rem, 2.5vw, 2rem);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -385,7 +385,7 @@ import DetailLayout from '../layouts/DetailLayout.vue'
 }
 
 .closing {
-  padding: clamp(3rem, 6vh, 5rem) var(--gutter-x);
+  padding: var(--pad-sec-sm) var(--gutter-x);
   border-top: 1px solid var(--rule);
 }
 .closing .kicker { margin-bottom: 1.25rem; }

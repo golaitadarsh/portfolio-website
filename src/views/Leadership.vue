@@ -358,7 +358,7 @@ onBeforeUnmount(() => {
 .yrs {
   display: flex;
   flex-direction: column;
-  gap: clamp(2.25rem, 5vh, 3.5rem);
+  gap: var(--gap-title);
 }
 .yr-group {
   display: grid;

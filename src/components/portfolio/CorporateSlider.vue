@@ -46,15 +46,16 @@ const CORPORATE_PROJECTS: CorporateProject[] = [
   {
     id: 'modular-framework',
     num: '01',
-    name: 'Modular Production Framework',
+    name: 'Modular Production Framework across Retail Asset Models',
     org: 'Axis Bank',
     role: 'Manager / Senior Manager',
-    when: 'July 2023 — Present · Mumbai',
+    when: 'July, 2023 – Present · Mumbai',
     color: '#14180E',
     highlights: [
-      'Designed a <strong>modular forecasting framework</strong> used across multiple products — a common operating structure that became the blueprint for valuation-model automation.',
-      'Migrated 3 retail asset models from legacy systems to a production-ready PySpark ecosystem; eliminated spreadsheet dependencies.',
-      'Cut model upgrade timelines from 2–3 weeks to 1–4 days, and onboarding from 3–4 months to ~5 weeks across a 9-model portfolio.',
+      'Identified that every model release required significant rework and stakeholder coordination. Designed and rolled out a <strong>modular forecasting framework</strong> used across multiple products, creating a common operating structure that improved consistency, reduced execution effort, and later served as a blueprint for broader valuation-model automation efforts.',
+      'Led the transition of three retail asset models from legacy systems to a <strong>production-ready PySpark ecosystem</strong>, partnering with Business, Analytics, Finance, and Engineering teams to streamline data flows, eliminate spreadsheet dependencies, and establish a more reliable quarterly delivery process with improved traceability, governance, and audit readiness.',
+      'Reduced model upgrade timelines from <strong>2–3 weeks to as little as 1–4 days (80%+ reduction)</strong> by restructuring workflows, standardising upstream dependencies, and introducing repeatable execution processes, enabling faster response to business requests while maintaining delivery quality and stakeholder confidence.',
+      'Mentored and onboarded new team members, reducing ramp-up time from <strong>3–4 months to nearly 5 weeks</strong> through structured knowledge transfer, recorded walkthroughs, and hands-on guidance to enable smooth ownership transitions and sustained quarterly delivery across a portfolio of nine forecasting models.',
     ],
     card: {
       kind: 'metric',
@@ -67,15 +68,16 @@ const CORPORATE_PROJECTS: CorporateProject[] = [
   {
     id: 'ccps',
     num: '02',
-    name: 'Credit Card Profitability Framework',
+    name: 'Credit Card Profitability Framework Transformation',
     org: 'Axis Bank',
     role: 'Manager / Senior Manager',
-    when: 'May 2023 — Present · Mumbai',
+    when: 'May, 2023 – Present · Mumbai',
     color: '#0E1311',
     highlights: [
-      '<strong>Cut monthly turnaround from 2–3 days to 3 hours</strong> by redesigning the Credit Card Profit Score (CCPS) workflow and automating validations.',
-      'Sole coordination point across Business, Finance, Analytics, Data Engineering and external partners — uninterrupted across 30+ monthly cycles.',
-      'Owned the Citibank credit-card portfolio integration post-acquisition, validating coverage across 20+ upstream sources.',
+      'Reduced monthly turnaround time from <strong>2–3 days to 3 hours (90% reduction)</strong> by redesigning the Credit Card Profit Score (CCPS) operating workflow, automating validations, and eliminating recurring execution bottlenecks across production cycles.',
+      'Owned end-to-end delivery of the <strong>Credit Card Profit Score (CCPS)</strong>, an account-level profitability framework used by Credit Card leadership for portfolio reviews, performance management, and profitability-driven decision making.',
+      'Served as the central coordination point across Business, Finance, Analytics, Data Engineering, and external partners; translating business changes into framework updates, resolving reporting and data-quality issues, and ensuring uninterrupted delivery across <strong>30+ monthly production cycles</strong> despite evolving requirements and upstream dependencies.',
+      'Became the go-to owner for major framework changes, including the integration of <strong>Citibank’s credit card portfolio</strong> into Axis Bank post-acquisition; coordinated with multiple data owners and external vendors across 20+ upstream sources to validate customer coverage, resolve integration gaps, and strengthen the framework to support the expanded portfolio without disrupting monthly reporting cycles.',
     ],
     card: {
       kind: 'metric',
@@ -88,15 +90,17 @@ const CORPORATE_PROJECTS: CorporateProject[] = [
   {
     id: 'automation',
     num: '03',
-    name: 'Cross-Functional Automation',
+    name: 'Cross-Functional Automation & Platform Transformation',
     org: 'Axis Bank',
     role: 'Senior Manager',
-    when: 'April 2024 — December 2025 · Mumbai',
+    when: 'April, 2024 – December, 2025 · Mumbai',
     color: '#131013',
     highlights: [
-      '<strong>De-facto owner</strong> across two consecutive programs — a 10-month valuation-model automation and an 8-month profitability-score automation.',
-      'Coordinated 4 internal teams and a 6-member TCS engineering team to automate 8 systems across Retail Assets and Cards.',
-      'Converted years of modelling logic into production-ready requirements; built validation enabling multi-year historical back-population.',
+      'Became the <strong>de-facto owner</strong> across two consecutive automation programs (10-month valuation model automation, then 8-month profitability score automation), coordinating four internal teams and a 6-member TCS engineering team to automate 8 models used across Retail Assets and Cards.',
+      'Converted years of accumulated modelling logic, business rules, and process dependencies into <strong>production-ready system requirements</strong>, providing the foundation and blueprint for 8 automated valuation and profitability systems.',
+      'Extended a single-product automation framework to support <strong>Personal Loans</strong> by reverse-engineering assumptions, cashflow behaviour, risk treatment, and dimensional logic, eliminating recurring manual effort from monthly operations.',
+      'Identified scaling challenges in independently developed automations and drove a more <strong>standardized architecture</strong> through reusable modules, common implementation patterns, and framework-level recommendations adopted across products.',
+      'Built validation and reconciliation layers that enabled <strong>multi-year historical back-population</strong>, improved release reliability, and increased confidence in outputs used for pricing, profitability, and planning decisions.',
     ],
     card: {
       kind: 'metric',
@@ -110,15 +114,15 @@ const CORPORATE_PROJECTS: CorporateProject[] = [
   {
     id: 'solo-ownership',
     num: '04',
-    name: 'Solo Operational Ownership',
+    name: 'Solo Operational Ownership Through Full Team Transition',
     org: 'Axis Bank',
     role: 'Manager',
-    when: 'January 2025 — April 2025 · Mumbai',
+    when: 'January, 2025 – April, 2025 · Mumbai',
     color: '#0F1212',
     highlights: [
-      'Held the full Financial Modelling portfolio as <strong>sole delivery owner for 3 months</strong> through a complete team transition — zero missed deadlines, zero disruptions, zero external support.',
-      'Executed 15+ concurrent deliverables: production for 4 valuation models and 2 profit scores, 4 BA handoffs, and 5 Agri ownership transfers.',
-      'Rebuilt the team post-transition with a two-directional handover, production SOPs, and KT to independent delivery within a quarter.',
+      'Held full delivery of the Financial Modelling portfolio as <strong>sole delivery owner for 3 months</strong> through a complete team transition, maintaining zero missed deadlines, zero production disruptions, and zero external support.',
+      'Executed <strong>15+ concurrent deliverables</strong>: production for 4 valuation models and 2 profit scores; handoffs of 4 profit scores to BA teams; and ownership transfers of 5 Agri models to incoming hires, all while managing Business + Analytics stakeholders.',
+      'Rebuilt the team post-transition: designed a <strong>two-directional structured handover</strong>, authored production-pipeline SOPs, and ran knowledge transfer that took new hires to independent delivery within their first quarter.',
     ],
     card: {
       kind: 'metric',
@@ -132,15 +136,16 @@ const CORPORATE_PROJECTS: CorporateProject[] = [
   {
     id: 'smartokids',
     num: '05',
-    name: 'Hardware Product Development',
+    name: 'Hardware Product Development and Vendor Operations at an Early-Stage Startup',
     org: 'SmartoKids',
     role: 'Product Development Intern',
-    when: 'May 2022 — July 2022 · Ahmedabad',
+    when: 'May, 2022 – July, 2022 · Ahmedabad',
     color: '#16120C',
     highlights: [
-      'Reverse-engineered <strong>10+ competing STEM & consumer hardware products</strong> to find reusable design patterns within BOM-cost and manufacturing constraints.',
-      'Ran 4+ concurrent hardware workstreams concept → physical prototype; designed parts in Fusion 360 & AutoCAD with laser-ready cut files.',
-      'Evaluated and coordinated vendors across laser cutting, 3D printing, packaging and manufacturing — end-to-end sourcing & pre-production.',
+      'Reverse-engineered <strong>10+ competing STEM and consumer hardware products</strong> to identify reusable design patterns and differentiation opportunities within BOM-cost and manufacturing constraints, informing product ideation and sourcing decisions.',
+      'Managed <strong>4+ concurrent hardware development workstreams</strong> from concept to physical prototype across new product concepts and enhancements to existing products in a small-team startup environment.',
+      'Designed and prototyped manufacturable hardware concepts using <strong>Fusion 360 and AutoCAD</strong>, translating multi-part assemblies into laser-ready cut files and validating fit, tolerances, and cost/quality through iterative physical builds.',
+      'Evaluated and coordinated external vendors across <strong>laser cutting, 3D printing, packaging, and manufacturing</strong> processes, assessing supplier capabilities and quotations while gaining end-to-end exposure to sourcing and pre-production operations.',
     ],
     card: {
       kind: 'photo',
@@ -174,6 +179,7 @@ onMounted(() => {
   let currentLayer: HTMLElement | null = null
   let titleRoll: gsap.core.Timeline | null = null
   let activeVizCard: HTMLElement | null = null
+  let attractTimer: number | null = null
 
   const el = (tag: string, cls?: string | null, html?: string) => {
     const n = document.createElement(tag)
@@ -211,7 +217,27 @@ onMounted(() => {
   body.appendChild(left)
   body.appendChild(fan)
 
+  /* Foot rail — arrows, dots and a count hint read as ONE control cluster,
+     left-aligned under the copy column. Parked apart (dots left / arrows far
+     right) the arrows sat outside the reading path and were routinely missed. */
   const foot = el('div', 'cs-foot')
+  const nav = el('div', 'cs-nav')
+
+  const arrowSvg = (paths: string) =>
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>'
+  const arrows = el('div', 'cs-arrows')
+  const prevBtn = el('button', 'cs-arrow cs-arrow-prev',
+    arrowSvg('<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>')) as HTMLButtonElement
+  prevBtn.type = 'button'; prevBtn.setAttribute('aria-label', 'Previous project')
+  const nextBtn = el('button', 'cs-arrow cs-arrow-next',
+    arrowSvg('<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>')) as HTMLButtonElement
+  nextBtn.type = 'button'; nextBtn.setAttribute('aria-label', 'Next project')
+  prevBtn.addEventListener('click', () => manualGo(current - 1))
+  nextBtn.addEventListener('click', () => manualGo(current + 1))
+  arrows.appendChild(prevBtn)
+  arrows.appendChild(nextBtn)
+
   const dots = el('div', 'cs-dots')
   P.forEach((_, i) => {
     const d = el('button', 'cs-dot') as HTMLButtonElement
@@ -221,17 +247,16 @@ onMounted(() => {
     d.addEventListener('click', () => { manualGo(i) })
     dots.appendChild(d)
   })
-  const arrows = el('div', 'cs-arrows')
-  const prevBtn = el('button', 'cs-arrow', '←') as HTMLButtonElement
-  prevBtn.type = 'button'; prevBtn.setAttribute('aria-label', 'Previous project')
-  const nextBtn = el('button', 'cs-arrow', '→') as HTMLButtonElement
-  nextBtn.type = 'button'; nextBtn.setAttribute('aria-label', 'Next project')
-  prevBtn.addEventListener('click', () => manualGo(current - 1))
-  nextBtn.addEventListener('click', () => manualGo(current + 1))
-  arrows.appendChild(prevBtn)
-  arrows.appendChild(nextBtn)
-  foot.appendChild(dots)
-  foot.appendChild(arrows)
+
+  // Says out loud that the section holds more than one slide — the fan alone
+  // reads as decoration to a first-time viewer.
+  const navHint = el('span', 'cs-nav-hint',
+    '<b>' + String(N).padStart(2, '0') + '</b> programs — browse')
+
+  nav.appendChild(arrows)
+  nav.appendChild(dots)
+  nav.appendChild(navHint)
+  foot.appendChild(nav)
 
   stage.appendChild(tint)
   stage.appendChild(grain)
@@ -347,7 +372,16 @@ onMounted(() => {
     while (d < -half) d += N
     return Math.max(-2, Math.min(2, d))
   }
-  function fanH() { return fanInner.offsetHeight || (window.innerHeight * 0.6) }
+  /* Fan spacing unit. Was the fan COLUMN height, which meant the neighbour
+     cards were flung a fixed fraction of the viewport away — on a tall or
+     wide screen they landed outside the clipped stage and read as a card
+     sliced by the bottom edge. Deriving it from the card itself (and capping
+     at half the column) keeps the whole fan inside frame at every size. */
+  function fanH() {
+    const colH = fanInner.offsetHeight || (window.innerHeight * 0.6)
+    const cardH = cards[0]?.offsetHeight || colH * 0.6
+    return Math.min(cardH * 1.05, colH * 0.5)
+  }
   function propsForStep(step: number) {
     const h = fanH()
     const p = POS[step + 2]
@@ -615,10 +649,21 @@ onMounted(() => {
   function stopAuto() { if (autoId) { clearInterval(autoId); autoId = null } }
   function restartAuto() { startAuto() }
 
+  /* Autoplay holds only over the reading column and the controls. The stage is
+     a full viewport tall, so pausing on stage-hover meant autoplay effectively
+     never ran on desktop — the pointer is always somewhere inside it — and a
+     slider that never advances gives a viewer no signal that more slides
+     exist. Over the card fan it keeps cycling; that motion IS the signal. */
   const onEnter = () => { hovered = true; if (progressTween) progressTween.pause() }
   const onLeave = () => { hovered = false; if (progressTween && inView) progressTween.resume() }
-  stage.addEventListener('mouseenter', onEnter)
-  stage.addEventListener('mouseleave', onLeave)
+  const pauseZones = [left, foot]
+  pauseZones.forEach((z) => {
+    z.addEventListener('mouseenter', onEnter)
+    z.addEventListener('mouseleave', onLeave)
+  })
+  // Keyboard users get the same hold while focus sits inside the controls.
+  foot.addEventListener('focusin', onEnter)
+  foot.addEventListener('focusout', onLeave)
 
   /* ── init ── */
   setMeta(P[0])
@@ -646,6 +691,12 @@ onMounted(() => {
       countUp(cards[current])
       handleViz(current)
       startAuto()
+      // One-time ring pulse on the primary control so the cluster announces
+      // itself the first time the section is reached, then goes quiet.
+      if (!REDUCED) {
+        nextBtn.classList.add('is-attract')
+        attractTimer = window.setTimeout(() => nextBtn.classList.remove('is-attract'), 4600)
+      }
     } else if (nowIn && !was) {
       startAuto()
       // Restart the active card's viz loops (killed on exit below).
@@ -699,6 +750,7 @@ onMounted(() => {
     io.disconnect()
     clearTimeout(fallbackTimer)
     if (animTimer) clearTimeout(animTimer)
+    if (attractTimer) clearTimeout(attractTimer)
     stopAuto()
     if (progressTween) progressTween.kill()
     if (titleRoll) titleRoll.kill()
@@ -706,8 +758,12 @@ onMounted(() => {
     window.removeEventListener('resize', onResizeFb)
     window.removeEventListener('resize', onResizeFan)
     window.removeEventListener('keydown', onKeydown)
-    stage.removeEventListener('mouseenter', onEnter)
-    stage.removeEventListener('mouseleave', onLeave)
+    pauseZones.forEach((z) => {
+      z.removeEventListener('mouseenter', onEnter)
+      z.removeEventListener('mouseleave', onLeave)
+    })
+    foot.removeEventListener('focusin', onEnter)
+    foot.removeEventListener('focusout', onLeave)
     cards.forEach((c) => stopViz(c as VizCard))
     gsap.killTweensOf(stage.querySelectorAll('*'))
     mount.innerHTML = ''
@@ -726,29 +782,26 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
 <style>
 .cs-stage {
   position: relative;
-  height: 100vh;
-  height: 100dvh;
-  min-height: 540px;
-  max-height: 1080px;
+  /* The topbar is sticky, so a full 100dvh stage always loses its top rail
+     behind the bar — the eyebrow/counter were never visible when the slide
+     was scrolled into place. Fit the stage to the space BELOW the bar so one
+     screen means one screen. */
+  height: calc(100vh - var(--topbar-h));
+  height: calc(100dvh - var(--topbar-h));
+  min-height: 560px;
+  max-height: 1000px;
   overflow: hidden;
+  /* Rails in flow, not floating over the copy. The old absolute chrome/foot
+     forced the body to reserve their height in padding — a guess that broke
+     at short viewports (the kicker slid under the top rail at 720px tall).
+     Three rows make the copy row exactly the leftover space, always. */
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   background: #0E1109;
   color: #F2F3EC;
   isolation: isolate;
 }
 
-/* Short / landscape viewports: compact the in-stage chrome (all inside the
-   definite-height, overflow-clipped stage) so the centered card is visible
-   without scrolling. */
-@media (max-height: 800px) {
-  .cs-chrome {
-    padding-top: clamp(0.8rem, 2vh, 1.3rem);
-  }
-  .cs-body {
-    padding-top: clamp(3rem, 7vh, 4rem);
-    padding-bottom: clamp(1rem, 2.5vh, 2rem);
-  }
-  .cs-ghost { display: none; }
-}
 
 /* ── color-morph wash ── */
 .cs-tint {
@@ -772,10 +825,10 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
 
 /* ── chrome (top rail) ── */
 .cs-chrome {
-  position: absolute;
-  top: 0; left: 0; right: 0;
+  position: relative;
+  grid-row: 1;
   z-index: 6;
-  padding: clamp(1.4rem, 3.4vh, 2.2rem) clamp(1.6rem, 4vw, 3.6rem);
+  padding: clamp(1.4rem, 3.4vh, 2.2rem) var(--gutter-x);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -809,13 +862,24 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
 /* ── body grid ── */
 .cs-body {
   position: relative;
+  grid-row: 2;
   z-index: 4;
-  height: 100%;
+  min-height: 0;
+  /* Verbatim résumé bullets are the widest content on the page. The copy
+     column takes the larger share; the card fan is a supporting graphic, not
+     a co-equal half.
+     LEFT-ANCHORED, not centred. A centred 1560px box put the slide title at
+     x=558 on a 2560px monitor while every other section title sat at x=64 —
+     the section read as misaligned against Academic Projects right above it.
+     Each column is now capped in px as well as %, so the pair packs from the
+     left gutter and the fan stays glued to the copy instead of drifting into
+     the middle of an ultrawide stage. */
   display: grid;
-  grid-template-columns: minmax(0, 47%) minmax(0, 53%);
+  grid-template-columns: minmax(0, min(61%, 1040px)) minmax(0, min(39%, 660px));
+  justify-content: start;
   align-items: center;
-  gap: clamp(1rem, 3vw, 3rem);
-  padding: clamp(2.4rem, 6.5vh, 6rem) clamp(1.6rem, 4vw, 3.6rem);
+  gap: clamp(1rem, 2.6vw, 2.6rem);
+  padding: clamp(0.9rem, 2.6vh, 2.4rem) var(--gutter-x) clamp(0.9rem, 2.6vh, 2.4rem);
 }
 @media (max-width: 900px) {
   .cs-body {
@@ -863,9 +927,12 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
 /* rolling title — two layers stack in one grid cell (no height math) */
 .cs-title {
   display: grid;
-  font: 900 clamp(2rem, 4.2vw, 3.9rem)/1 var(--f-sans);
-  letter-spacing: -0.035em;
+  /* Sized for the longest résumé project title (76 chars) — at the old 3.9rem
+     it ran four display lines and pushed the highlights under the foot rail. */
+  font: 900 clamp(1.55rem, 2.5vw, 2.55rem)/1.04 var(--f-sans);
+  letter-spacing: -0.03em;
   text-transform: uppercase;
+  text-wrap: balance;
   color: #F2F3EC;
 }
 .cs-title .cs-layer {
@@ -898,12 +965,27 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  max-width: 46ch;
+  max-width: 70ch;
+}
+/* Wide screens: the résumé bullets run 200–390 chars each, so a single
+   column costs ~24 line-boxes and can't clear the foot rail inside one
+   screen. Two balanced columns halve the height AND put the widescreen
+   dead space to work — each column still lands in the 45–60ch band. */
+@media (min-width: 1240px) {
+  .cs-highlights {
+    display: block;
+    max-width: none;
+    columns: 2;
+    column-gap: clamp(1.6rem, 2.2vw, 2.6rem);
+    column-fill: balance;
+  }
+  .cs-highlights li { break-inside: avoid; margin-bottom: 0.62rem; }
+  .cs-highlights li:last-child { margin-bottom: 0; }
 }
 .cs-highlights li {
   position: relative;
   padding-left: 1.4rem;
-  font: 400 clamp(0.85rem, 0.98vw, 0.95rem)/1.5 var(--f-sans);
+  font: 400 clamp(0.78rem, 0.9vw, 0.9rem)/1.55 var(--f-sans);
   color: rgba(242,243,236,0.72);
   text-wrap: pretty;
 }
@@ -936,7 +1018,9 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
   top: 50%;
   left: 50%;
   z-index: 1;
-  width: clamp(220px, 60%, 430px);
+  /* Height-aware: on short viewports a width-only clamp produced a card
+     taller than its own column. */
+  width: min(clamp(200px, 74%, 380px), 42vh);
   aspect-ratio: 1.02;
   will-change: transform, filter, opacity;
   contain: layout style;
@@ -1103,17 +1187,22 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
 }
 .cs-card.cs-card-photo .cs-photo-label b { color: var(--accent); font-weight: 600; }
 
-/* ── foot rail: dots + prev/next ── */
+/* ── foot rail: one left-aligned control cluster ── */
 .cs-foot {
-  position: absolute;
-  left: 0; right: 0;
-  bottom: 0;
+  position: relative;
+  grid-row: 3;
   z-index: 6;
-  padding: 0 clamp(1.6rem, 4vw, 3.6rem) clamp(1.5rem, 3.4vh, 2.2rem);
+  padding: clamp(0.3rem, 1vh, 0.9rem) var(--gutter-x) clamp(1.3rem, 3.2vh, 2.2rem);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 1rem;
+}
+.cs-nav {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: clamp(0.75rem, 1.7vw, 1.35rem);
 }
 .cs-dots { display: inline-flex; gap: 0.5rem; }
 .cs-dot {
@@ -1126,6 +1215,20 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
   transition: background 0.3s ease;
 }
 .cs-dot:hover { background: rgba(242,243,236,0.34); }
+/* The dot is a 3px-tall rule by design — a 30x3 tap target. Hang an invisible
+   40px-tall box off it so a thumb can land on it; the visual is untouched.
+   overflow has to go back to visible for the box to escape the rule (.fill is
+   inset:0 and only ever scaleX(≤1), so nothing else was relying on the clip). */
+.cs-dot { overflow: visible; }
+.cs-dot::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 40px;
+  transform: translateY(-50%);
+}
 .cs-dot .fill {
   position: absolute;
   inset: 0;
@@ -1133,22 +1236,110 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
   transform: scaleX(0);
   transform-origin: left center;
 }
-.cs-arrows { display: inline-flex; gap: 0.6rem; }
+.cs-arrows { display: inline-flex; gap: 0.55rem; }
 .cs-arrow {
-  width: 46px; height: 46px;
-  border: 1px solid rgba(242,243,236,0.28);
+  width: 52px; height: 52px;
+  /* 1px at 28% on a dark stage reads as trim, not a control. */
+  border: 1.5px solid rgba(242,243,236,0.55);
+  background: rgba(9,11,6,0.32);
   border-radius: 50%;
   display: grid;
   place-items: center;
-  color: rgba(242,243,236,0.85);
-  font-size: 1rem;
+  color: #F2F3EC;
   cursor: pointer;
-  transition: border-color 0.25s ease, background 0.25s ease, color 0.25s ease;
+  transition: border-color 0.25s ease, background 0.25s ease, color 0.25s ease,
+    transform 0.25s ease;
 }
-.cs-arrow:hover { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+.cs-arrow svg { width: 20px; height: 20px; display: block; }
+.cs-arrow:hover { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); transform: translateY(-2px); }
+.cs-arrow:active { transform: translateY(0) scale(0.96); }
+.cs-arrow:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* Forward is the primary affordance — filled so the cluster can't be mistaken
+   for decoration at a glance. Back stays outlined (secondary). */
+.cs-arrow-next {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.cs-arrow-next:hover { background: #E9FF7E; border-color: #E9FF7E; }
+.cs-arrow-next.is-attract { animation: cs-attract 1.5s ease-out 3; }
+@keyframes cs-attract {
+  0%   { box-shadow: 0 0 0 0 rgba(219,254,82,0.55); }
+  65%  { box-shadow: 0 0 0 18px rgba(219,254,82,0); }
+  100% { box-shadow: 0 0 0 0 rgba(219,254,82,0); }
+}
 
+.cs-nav-hint {
+  font: 500 0.64rem/1 var(--f-mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(242,243,236,0.62);
+}
+.cs-nav-hint b { color: var(--accent); font-weight: 700; letter-spacing: 0.1em; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-arrow-next.is-attract { animation: none; }
+}
+
+@media (max-width: 820px) {
+  .cs-nav-hint { display: none; }
+}
 @media (max-width: 640px) {
-  .cs-arrow { width: 42px; height: 42px; }
+  .cs-arrow { width: 46px; height: 46px; }
+  .cs-arrow svg { width: 18px; height: 18px; }
+  .cs-dot { width: 22px; }
   .cs-ghost { display: none; }
+}
+
+/* ── short-viewport compaction ──
+   Lives at the END of the sheet on purpose: these are same-specificity
+   overrides of the base rules above, so source order is what makes them
+   win. Parked at the top (where they used to be) they were silently dead. */
+/* Short / landscape viewports: compact the in-stage chrome (all inside the
+   definite-height, overflow-clipped stage) so the centered card is visible
+   without scrolling. */
+@media (max-height: 800px) {
+  .cs-chrome {
+    padding-top: clamp(0.8rem, 2vh, 1.3rem);
+  }
+  .cs-ghost { display: none; }
+  .cs-left { gap: clamp(0.5rem, 1.1vh, 0.9rem); }
+  .cs-title { line-height: 1; }
+  .cs-highlights { margin-top: 0; }
+  /* Tighter bullet rhythm buys back the vertical the verbatim copy costs,
+     without dropping below the 1.45 line-height readability floor. */
+  .cs-highlights { gap: 0.4rem; }
+  .cs-highlights li { line-height: 1.45; margin-bottom: 0.36rem; }
+}
+/* Short AND wide (13" laptops in landscape): the vertical is the scarce axis,
+   so buy copy width back from the card column — a wider measure costs the
+   bullets fewer lines, which is the only real lever left down here. */
+@media (max-height: 800px) and (min-width: 1240px) {
+  .cs-body { grid-template-columns: minmax(0, min(68%, 1160px)) minmax(0, min(32%, 560px)); }
+}
+
+/* ── narrow viewports ──
+   One column means the copy and the fan share the same vertical budget, so
+   the card has to give ground or the stack overflows its row and slides
+   under both rails. Also lifts the bullet size back up for phone reading. */
+@media (max-width: 900px) {
+  .cs-fan { min-height: 30vh; }
+  .cs-card { width: min(clamp(180px, 78%, 320px), 30vh); }
+}
+@media (max-width: 640px) {
+  /* Phones get an auto-height stage. Two verbatim résumé bullets, the title
+     block and a card cannot share 100dvh at a phone measure — forcing them to
+     clipped the copy under the rails. A slide that runs a little past one
+     screen is the honest trade here; the section still opens full-height. */
+  .cs-stage {
+    height: auto;
+    min-height: calc(100dvh - var(--topbar-h));
+    max-height: none;
+  }
+  .cs-title { font-size: clamp(1.3rem, 5.4vw, 1.8rem); }
+  .cs-highlights li { font-size: 0.84rem; line-height: 1.5; }
+  .cs-fan { min-height: 28vh; }
+  .cs-card { width: min(clamp(170px, 80%, 300px), 28vh); }
 }
 </style>

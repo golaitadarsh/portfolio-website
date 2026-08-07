@@ -20,16 +20,75 @@
   --accent:     #DBFE52;
   --accent-ink: #09090B;
 
-  --gutter-x:   clamp(1.5rem, 5vw, 4rem);
+  /* Held symmetric with max() so a notched phone in landscape widens BOTH
+     gutters rather than shifting the whole column sideways. Both insets are
+     0 in portrait and on every non-notched device, so this is a no-op
+     everywhere else. */
+  --gutter-x:   calc(clamp(1.5rem, 5vw, 4rem) + max(env(safe-area-inset-left), env(safe-area-inset-right)));
   --gutter-y:   clamp(1.5rem, 4vh, 2.75rem);
 
   --topbar-h:   clamp(3.2rem, 5.2vh, 3.8rem);
+
+  /* ── vertical rhythm ──
+     Flow-layout spacing used to be driven by vh, so the SAME page rendered
+     ~15% tighter on a 900px-tall laptop than on a 1440px-tall external
+     monitor (section padding 108px vs 128px, topbar 67px vs 75px). Below
+     1024px the vh curve still earns its keep (phones/tablets vary wildly in
+     height); from 1024px up these lock to fixed rem in the media block
+     below, so every desktop display renders identical spacing.
+     Viewport-FITTING stages (hero, summary, education, the slider) keep
+     their own vh math on purpose — those are meant to fill one screen. */
+  --pad-section:  clamp(4rem, 12vh, 8rem);
+  --pad-block:    clamp(2.5rem, 6vh, 4.5rem);
+  --pad-head-top: clamp(3.5rem, 8vh, 6rem);
+  --pad-head-bot: clamp(2rem, 4vh, 3rem);
+  --gap-title:    clamp(2rem, 5vh, 3.5rem);
+  --gap-lede:     clamp(2rem, 5vh, 3rem);
+  --gap-meta:     clamp(1.5rem, 4vh, 2.5rem);
+  --pad-entry:    clamp(1.75rem, 4vh, 2.5rem);
+  --pad-topbar-y: clamp(1rem, 2.4vh, 1.6rem);
+  /* card / panel padding, same lock (used by the detail routes) */
+  --pad-box-xs:   clamp(1.25rem, 2.5vh, 1.75rem);
+  --pad-box-sm:   clamp(1.5rem, 3vh, 2rem);
+  --pad-sec-sm:   clamp(3rem, 6vh, 5rem);
 
   --f-sans: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
   --f-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
-html { scroll-behavior: smooth; scroll-padding-top: 80px; }
+/* Desktop: rhythm is height-independent. A 1440×900 laptop and a 2560×1440
+   monitor now lay out identically (only the pinned viewport stages, which are
+   supposed to track the screen, still differ). */
+@media (min-width: 1024px) {
+  :root {
+    --gutter-y:     2.4rem;
+    --topbar-h:     3.6rem;
+    --pad-section:  7.5rem;
+    --pad-block:    4rem;
+    --pad-head-top: 5.5rem;
+    --pad-head-bot: 2.75rem;
+    --gap-title:    3rem;
+    --gap-lede:     2.75rem;
+    --gap-meta:     2.25rem;
+    --pad-entry:    2.25rem;
+    --pad-topbar-y: 1.4rem;
+    --pad-box-xs:   1.6rem;
+    --pad-box-sm:   1.8rem;
+    --pad-sec-sm:   4.5rem;
+  }
+}
+
+/* Anchor landings clear the sticky topbar. Driven off the same token the bar
+   is sized from (Portfolio.vue also syncs it to the measured height), so a
+   taller mobile bar can't park a heading underneath itself. */
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--topbar-h) + 0.75rem);
+  /* iOS Safari inflates font-size on rotation to portrait-optimised values,
+     which desyncs every clamp()/vw measurement the layout depends on. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 
 /* Clip (not hidden): entrance transforms (.rv-right translateX) poke past the
    viewport pre-reveal; clip discards that overflow without creating a scroll
@@ -52,6 +111,15 @@ a { color: inherit; text-decoration: none; }
 img, svg { display: block; max-width: 100%; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 
+/* iOS paints a translucent blue rectangle over any tapped link/button. On a
+   layout this hard-edged it reads as a rendering fault; the components carry
+   their own press/active states. touch-action drops the legacy 300ms
+   double-tap-zoom wait on the same elements. */
+a, button, [role="button"], input, select, textarea, label, summary {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
 /* ───── topbar ───── */
 .topbar {
   position: sticky;
@@ -60,10 +128,18 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: clamp(1rem, 2.4vh, 1.6rem) clamp(1rem, 2.6vw, 2rem);
-  background: rgba(255,255,255,0.86);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  /* env() insets keep the bar clear of the notch / rounded corners when a
+     phone is held in landscape; they resolve to 0 everywhere else. */
+  padding: var(--pad-topbar-y)
+           calc(clamp(1rem, 2.6vw, 2rem) + env(safe-area-inset-right))
+           var(--pad-topbar-y)
+           calc(clamp(1rem, 2.6vw, 2rem) + env(safe-area-inset-left));
+  /* Opaque, not frosted. At 0.86 + blur(8px) the display-weight headings
+     passing underneath still ghosted through as a grey smudge behind the nav —
+     no blur radius fixes that, only opacity. An opaque bar also matches the
+     hard editorial rule the border-bottom already draws, and drops the
+     backdrop-filter compositing layer (a real cost on mobile). */
+  background: var(--paper);
   border-bottom: 1px solid var(--rule);
 }
 .topbar .brand {
@@ -141,15 +217,17 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* ───── page-head ───── */
 .page-head {
-  padding: clamp(3.5rem, 8vh, 6rem) var(--gutter-x) clamp(2rem, 4vh, 3rem);
+  padding: var(--pad-head-top) var(--gutter-x) var(--pad-head-bot);
   border-bottom: 1px solid var(--rule);
   position: relative;
 }
 .page-head .meta {
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.5rem;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: clamp(1.5rem, 4vh, 2.5rem);
+  margin-bottom: var(--gap-meta);
   font: 500 0.7rem/1 var(--f-mono);
   letter-spacing: 0.2em;
   text-transform: uppercase;
@@ -163,13 +241,18 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   letter-spacing: -0.05em;
   text-transform: uppercase;
   max-width: 14ch;
+  /* Display type at 900 weight has no soft-wrap opportunities inside a word:
+     one long token ("INFRASTRUCTURE", "RESPONSIBILITY") sitting on its own
+     <br> line ran past the right edge on every phone width. Last-resort
+     breaking keeps the heading inside the gutter no matter the string. */
+  overflow-wrap: break-word;
 }
 .page-head h1 .accent-line {
   display: inline-block;
   color: var(--ink-soft);
 }
 .page-head .lede {
-  margin-top: clamp(1.5rem, 4vh, 2.25rem);
+  margin-top: var(--gap-meta);
   max-width: 58ch;
   font: 400 clamp(1rem, 1.25vw, 1.18rem)/1.55 var(--f-sans);
   color: var(--ink-soft);
@@ -210,14 +293,16 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   display: grid;
   grid-template-columns: 1fr 1fr;
   border-top: 1px solid var(--rule);
-  margin-top: clamp(3rem, 8vh, 6rem);
+  margin-top: var(--pad-head-top);
 }
 .page-foot a {
   display: block;
-  padding: clamp(2rem, 4vh, 3rem) var(--gutter-x);
+  padding: var(--pad-head-bot) var(--gutter-x);
   position: relative;
   transition: background 0.25s ease;
 }
+/* Last block on the detail routes — clear the iOS home indicator. */
+.page-foot a:last-child { padding-bottom: calc(var(--pad-head-bot) + env(safe-area-inset-bottom)); }
 .page-foot a + a { border-left: 1px solid var(--rule); }
 .page-foot a:hover { background: var(--paper-2); }
 .page-foot .dir {
@@ -243,16 +328,183 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .page-foot a.next { text-align: right; }
 .page-foot a.next .label { justify-content: flex-end; }
 
+/* ───── mobile nav toggle ───── */
+/* Desktop never shows the button; the nav row is the nav. */
+.nav-toggle { display: none; }
+
 /* ───── responsive ───── */
-@media (max-width: 880px) {
+/* 721–1080px: brand + six uppercase links measure ~990px, so the row ran off
+   the right edge of anything narrower than ~1060 (a 932px iPhone Pro Max in
+   landscape sat squarely in that gap). Drop the index numerals — which alone
+   buys back ~200px and keeps one row at most of the range — and let the row
+   wrap instead of overflow at the bottom of it. */
+@media (max-width: 1080px) {
   .nav-num { display: none; }
   .nav { gap: 0.9rem; flex-wrap: wrap; justify-content: flex-end; }
+  /* Tightened tracking keeps all six on one row down to iPad portrait, where
+     they otherwise broke with "Skills" orphaned on a second row and the brand
+     floating off-centre against it. */
+  .nav-label { font-size: 0.7rem; letter-spacing: 0.1em; }
+}
+
+@media (max-width: 880px) {
   .topbar .brand .brand-sub { display: none; }
-  .page-head h1 { font-size: clamp(2.2rem, 12vw, 4.4rem); max-width: 100%; }
+  /* 12vw put "INFRASTRUCTURE" (Experience) and "RESPONSIBILITY" (Leadership)
+     at ~424px on a 390px screen — a real horizontal overflow, not a clipped
+     decoration. These headings sit on forced <br /> lines, so the longest
+     single token sets the ceiling: 9.6vw is the largest size at which it
+     still clears the gutters at 320px. */
+  .page-head h1 { font-size: clamp(1.7rem, 9.2vw, 4.4rem); max-width: 100%; }
+  /* Same story one level down: the 2.4rem floor was still wider than a 320px
+     gutter for "RESPONSIBILITY" / "EXTRA-CURRICULAR", so let vw govern all
+     the way down instead of bottoming out above the fit. */
+  .section-title { font-size: clamp(1.6rem, 8.4vw, 3.2rem); overflow-wrap: break-word; }
   .page-foot { grid-template-columns: 1fr; }
   .page-foot a + a { border-left: 0; border-top: 1px solid var(--rule); }
 }
+
+/* ── phone: nav becomes a sheet behind a toggle ──
+   Five to six uppercase links wrap to three rows at phone width: the bar
+   grew to ~130px, the brand floated off-centre against it, and on the home
+   route the links were hidden outright — leaving a 21,000px page with no
+   way to jump. Same <nav> element and same links (scroll-spy and the
+   pin-landing click handler bind to them by selector), just presented as a
+   full-height sheet.
+
+   The second condition is the same phone turned sideways: ≤1024×≤500 is a
+   landscape handset, where a wrapped two-row bar would eat a third of a
+   390px-tall screen. The width bound keeps a short-but-wide desktop window
+   out of it. */
+@media (max-width: 720px), (max-width: 1024px) and (max-height: 500px) {
+  :root {
+    /* The bar now sizes off the 40px toggle rather than the text lockup, so
+       the vh-driven padding would push it to ~82px — an eighth of a phone
+       screen, permanently. Trim the padding and move the token's fallback to
+       match the real rendered height (Portfolio.vue re-syncs it exactly). */
+    --pad-topbar-y: 0.7rem;
+    --topbar-h: 4.05rem;
+  }
+  .topbar { align-items: center; }
+
+  .nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    /* 40px box inside the bar's own padding clears the 44px tap target. */
+    min-height: 40px;
+    padding: 0 0.75rem;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    font: 500 0.66rem/1 var(--f-mono);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .nav-toggle[aria-expanded="true"] {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .nav-toggle .bars {
+    position: relative;
+    display: block;
+    width: 14px;
+    height: 9px;
+    flex: none;
+  }
+  .nav-toggle .bars::before,
+  .nav-toggle .bars::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0;
+    height: 1.5px;
+    background: currentColor;
+    transition: transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1), top 0.22s ease;
+  }
+  .nav-toggle .bars::before { top: 0; }
+  .nav-toggle .bars::after  { top: 7.5px; }
+  .nav-toggle[aria-expanded="true"] .bars::before { top: 3.75px; transform: rotate(45deg); }
+  .nav-toggle[aria-expanded="true"] .bars::after  { top: 3.75px; transform: rotate(-45deg); }
+
+  .nav {
+    position: fixed;
+    top: var(--topbar-h);
+    left: 0;
+    right: 0;
+    /* dvh, not vh: the sheet must end at the *current* viewport bottom, so
+       iOS Safari's collapsing URL bar can't leave the last link under the
+       chrome. The vh line stays first as the pre-dvh fallback. */
+    height: calc(100vh - var(--topbar-h));
+    height: calc(100dvh - var(--topbar-h));
+    z-index: 69;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 0;
+    padding: 0.5rem
+             calc(var(--gutter-x) + env(safe-area-inset-right))
+             calc(2rem + env(safe-area-inset-bottom))
+             calc(var(--gutter-x) + env(safe-area-inset-left));
+    background: var(--paper);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* Closed state stays in the DOM (the scroll-spy observer holds refs to
+       these links) but is inert and unreachable. */
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-0.5rem);
+    transition: opacity 0.22s ease, transform 0.22s ease, visibility 0s linear 0.22s;
+  }
+  .nav.is-open {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition: opacity 0.22s ease, transform 0.22s ease, visibility 0s;
+  }
+
+  /* The brand lockup is a 13px-tall text link — the sole way back to the
+     index. Give it a real touch box inside the bar's existing height. */
+  .topbar .brand { min-height: 40px; align-items: center; }
+
+  .nav-num { display: inline; }
+  .nav a {
+    display: flex;
+    align-items: baseline;
+    gap: 0.85rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--rule);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .nav a .nav-num { font-size: 0.66rem; color: var(--ink-faint); }
+  .nav a .nav-label { font-size: 1.05rem; letter-spacing: 0.1em; }
+  /* The desktop underline treatments are absolutely positioned against a
+     baseline row; in the sheet they'd draw a stray rule across a link. */
+  .nav a::before,
+  .nav a::after { display: none !important; }
+  .nav a.router-link-exact-active .nav-label,
+  .nav a[aria-current="page"] .nav-label,
+  .nav a.is-active .nav-label { color: var(--ink); }
+  .nav a.router-link-exact-active .nav-num,
+  .nav a[aria-current="page"] .nav-num,
+  .nav a.is-active .nav-num {
+    color: var(--accent-ink);
+    background: var(--accent);
+    padding: 0.15em 0.4em;
+  }
+
+}
+
+/* Narrow-column rules — width only, so a landscape phone (wide, short) keeps
+   the two-up rows it has room for. */
 @media (max-width: 720px) {
+  /* Two mono strings sharing one baseline row both wrapped mid-phrase and
+     read as a collision. Stack them: each gets the full column. */
+  .page-head .meta { display: block; }
+  .page-head .meta > * + * { display: block; margin-top: 0.4rem; }
+
   /* Entry header: date column drops next to the title and stacks under it —
      the auto column otherwise refuses to wrap long date strings and pushes
      the layout past the viewport. */
@@ -262,8 +514,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .nav,
+  .nav-toggle .bars::before,
+  .nav-toggle .bars::after { transition: none; }
+}
+
 /* ───── helpers ───── */
-.section-block { padding: clamp(2.5rem, 6vh, 4.5rem) var(--gutter-x); }
+.section-block { padding: var(--pad-block) var(--gutter-x); }
 .section-block + .section-block { border-top: 1px solid var(--rule); }
 
 /* ============================================================
@@ -382,7 +640,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
    ============================================================ */
 .section {
   position: relative;
-  padding: clamp(4rem, 12vh, 8rem) var(--gutter-x);
+  padding: var(--pad-section) var(--gutter-x);
   border-top: 1px solid var(--rule);
 }
 .section-num {
@@ -399,7 +657,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   font: 900 clamp(2.4rem, 6vw, 5.2rem)/0.9 var(--f-sans);
   letter-spacing: -0.04em;
   text-transform: uppercase;
-  margin-bottom: clamp(2rem, 5vh, 3.5rem);
+  margin-bottom: var(--gap-title);
 }
 .section-title .accent-line { color: var(--ink-soft); }
 .section-lede {
@@ -407,11 +665,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   font: 400 clamp(1rem, 1.2vw, 1.12rem)/1.55 var(--f-sans);
   color: var(--ink-soft);
   text-wrap: pretty;
-  margin-bottom: clamp(2rem, 5vh, 3rem);
+  margin-bottom: var(--gap-lede);
 }
 
 .entry {
-  padding: clamp(1.75rem, 4vh, 2.5rem) 0;
+  padding: var(--pad-entry) 0;
   border-top: 1px solid var(--rule);
 }
 .entry:first-of-type { border-top: 0; padding-top: 0; }
@@ -492,7 +750,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   grid-template-columns: 8rem 1fr;
   gap: clamp(1rem, 3vw, 2.5rem);
   align-items: baseline;
-  margin-bottom: clamp(2rem, 5vh, 3rem);
+  margin-bottom: var(--gap-lede);
 }
 .section-head .num {
   font: 500 0.7rem/1 var(--f-mono);

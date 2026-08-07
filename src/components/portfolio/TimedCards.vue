@@ -1077,6 +1077,19 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
   .tcm-body .tc-bullets li { font-size: 0.8rem; color: rgba(244,244,241,0.72); }
   .tcm-body .tc-tag { padding: 0.42rem 0.6rem; }
   .tcm-body .tc-actions { margin-top: 0.2rem; }
+  /* 17px-tall mono links ("Project video", "Team"). Padding would push the
+     underline off the word, so extend the hit box with an invisible ::before
+     and widen the row gap so stacked links don't share a target. */
+  .tcm-body .tc-links { gap: 1.5rem 1rem; }
+  .tcm-body .tc-links a { position: relative; }
+  .tcm-body .tc-links a::before {
+    content: '';
+    position: absolute;
+    left: 0; right: 0;
+    top: 50%;
+    height: 40px;
+    transform: translateY(-50%);
+  }
 }
 
 @media (max-width: 1280px) {

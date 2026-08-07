@@ -113,7 +113,7 @@ import DetailLayout from '../layouts/DetailLayout.vue'
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
   gap: clamp(2rem, 5vw, 5rem);
-  padding: clamp(3rem, 7vh, 5rem) var(--gutter-x);
+  padding: var(--pad-sec-sm) var(--gutter-x);
   align-items: start;
 }
 @media (max-width: 980px) {
@@ -123,7 +123,7 @@ import DetailLayout from '../layouts/DetailLayout.vue'
 .institute-card {
   position: sticky;
   top: 8rem;
-  padding: clamp(1.5rem, 3vh, 2.5rem);
+  padding: var(--pad-box-sm);
   border: 1px solid var(--rule);
   background: var(--paper);
 }
@@ -184,7 +184,7 @@ import DetailLayout from '../layouts/DetailLayout.vue'
   letter-spacing: -0.01em;
 }
 
-.edu-right { display: flex; flex-direction: column; gap: clamp(2rem, 5vh, 3rem); }
+.edu-right { display: flex; flex-direction: column; gap: var(--gap-lede); }
 
 .stat-row {
   display: grid;
@@ -192,7 +192,7 @@ import DetailLayout from '../layouts/DetailLayout.vue'
   border: 1px solid var(--rule);
 }
 .stat-row .stat {
-  padding: clamp(1.25rem, 3vh, 2rem);
+  padding: var(--pad-box-sm);
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -216,7 +216,7 @@ import DetailLayout from '../layouts/DetailLayout.vue'
 
 .medal-card {
   position: relative;
-  padding: clamp(2rem, 4vh, 3rem);
+  padding: var(--pad-head-bot);
   background: var(--ink);
   color: var(--paper);
   overflow: hidden;
@@ -271,7 +271,7 @@ import DetailLayout from '../layouts/DetailLayout.vue'
 .highlight-list li {
   list-style: none;
   background: var(--paper);
-  padding: clamp(1.25rem, 2.5vh, 1.75rem);
+  padding: var(--pad-box-xs);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -296,7 +296,7 @@ import DetailLayout from '../layouts/DetailLayout.vue'
   grid-template-columns: 100px 1fr;
   gap: 1.5rem;
   align-items: start;
-  padding: clamp(1.5rem, 3vh, 2rem) 0;
+  padding: var(--pad-box-sm) 0;
   border-top: 1px solid var(--rule);
 }
 .timeline .yr {
@@ -314,7 +314,7 @@ import DetailLayout from '../layouts/DetailLayout.vue'
 .timeline .body strong { color: var(--ink); font-weight: 600; }
 
 .pre-strip {
-  padding: clamp(2.5rem, 6vh, 4rem) var(--gutter-x);
+  padding: var(--pad-block) var(--gutter-x);
   border-top: 1px solid var(--rule);
 }
 </style>

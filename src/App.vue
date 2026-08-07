@@ -1,12 +1,9 @@
 <script lang="ts" setup>
-import { defineAsyncComponent } from 'vue'
-import { useRoute } from 'vue-router'
-
-const FluidCursor = defineAsyncComponent(() => import('./components/fluid-cursor/FluidCursor.vue'))
-const route = useRoute()
+// The fluid cursor is not a global chrome layer — it belongs to the hero
+// plate only, so Portfolio.vue mounts it and gates it on the hero zoom
+// progress. See `fluidCursorActive` there.
 </script>
 
 <template>
   <RouterView />
-  <FluidCursor v-if="route.path === '/'" />
 </template>

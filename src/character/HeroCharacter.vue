@@ -96,7 +96,20 @@ onMounted(() => {
   let mouse = { x: 0, y: 0 };
   let interpolation = { x: 0.1, y: 0.2 };
 
+  // Cursor-follow demo. Most visitors arrive here mid-scroll with a parked
+  // mouse, so the headline interaction ("he follows you") never fires and the
+  // stage reads as a static render. Until the first real pointer input, drive
+  // the look target on a slow scripted arc so the head visibly turns on its
+  // own; the first genuine move takes over permanently.
+  let userPointed = false;
+  let demoTime = 0;
+  const DEMO_DELAY_S = 1.2; // visible stage time before the sweep begins
+  const DEMO_RAMP_S = 1.2; // ease the amplitude in — no snap from centre
+  const DEMO_PERIOD_S = 7; // one full left → right → left cycle
+  const demoReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
   const onMouseMove = (event: MouseEvent) => {
+    userPointed = true;
     handleMouseMove(event, (x, y) => (mouse = { x, y }));
   };
   let touchTimer: number | undefined;
@@ -107,6 +120,7 @@ onMounted(() => {
   let touchTracking = false;
   const onTouchMove = (e: TouchEvent) => {
     if (!touchTracking) return;
+    userPointed = true;
     handleTouchMove(e, (x, y) => (mouse = { x, y }));
   };
   const onTouchStart = () => {
@@ -192,6 +206,21 @@ onMounted(() => {
     // Cap the step so a background-tab pause can't fast-forward the rig.
     const delta = Math.min(clock.getDelta(), 0.066);
     swayTime += delta;
+    // Clock only ticks while the stage is actually visible — `paused` means
+    // the doors are still shut and nothing here can be seen, so the sweep
+    // would otherwise be half over by the time it's revealed.
+    if (!userPointed && !demoReduced && !props.paused) {
+      demoTime += delta;
+      const t = demoTime - DEMO_DELAY_S;
+      if (t > 0) {
+        const amp = Math.min(1, t / DEMO_RAMP_S);
+        const phase = (t / DEMO_PERIOD_S) * Math.PI * 2;
+        mouse = {
+          x: Math.sin(phase) * 0.78 * amp,
+          y: Math.sin(phase * 0.5 + 0.6) * 0.22 * amp,
+        };
+      }
+    }
     if (headBone) {
       handleHeadRotation(
         headBone,

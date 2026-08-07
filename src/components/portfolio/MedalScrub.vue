@@ -215,6 +215,15 @@ onMounted(() => {
   opacity: var(--aw-glow, 0);
   pointer-events: none;
 }
+/* Below 980px the awards .split collapses to one column, so the wrap spans
+   gutter to gutter and a -16% horizontal bleed lands outside the page —
+   making the whole document horizontally scrollable (html/body only hid it
+   via the global overflow-x:clip). Breakpoint matches .split's, so this
+   covers landscape phones and tablets too, not just portrait. Keep the
+   vertical swell; pull the sides inside the 1.5rem gutter. */
+@media (max-width: 980px) {
+  .medal-glow { inset: -16% -1rem; }
+}
 .medal-scrub {
   display: block;
   padding: 0;
