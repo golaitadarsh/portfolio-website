@@ -54,6 +54,11 @@
 
   --f-sans: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
   --f-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  /* Condensed grotesque, hero narrative only. Inter at any weight is a
+     normal-width face — it cannot produce the tall/narrow editorial column
+     the hero composition is built around. Variable axis 300..700 so the same
+     file covers the light body lines and the heavy accent lines. */
+  --f-display: 'Oswald', 'Inter', 'Helvetica Neue', system-ui, sans-serif;
 }
 
 /* Desktop: rhythm is height-independent. A 1440×900 laptop and a 2560×1440

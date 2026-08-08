@@ -3,12 +3,18 @@ import { defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref } from 
 import HeroSection from '../HeroSection.vue'
 import BeamsBackground from '../components/BeamsBackground.vue'
 import CorporateSlider from '../components/portfolio/CorporateSlider.vue'
+import HeroNarrative from '../components/portfolio/HeroNarrative.vue'
 import MedalScrub from '../components/portfolio/MedalScrub.vue'
 import PorPhotoWall from '../components/portfolio/PorPhotoWall.vue'
 import type { WallPhoto } from '../components/portfolio/PorPhotoWall.vue'
 import TimedCards from '../components/portfolio/TimedCards.vue'
 import { useMobileNav } from '../composables/useMobileNav'
 import signatureSvgRaw from '../../assets/signature.svg?raw'
+// Framer Motion's keyframe interpolator, via Motion for Vue. Pure function —
+// the `<motion.*>` components do not survive on this route (see the header of
+// HeroNarrative.vue), so every scrub here writes styles from a rAF instead.
+import { transform } from 'motion-v'
+import iitgnCampusImg from '../../assets/IIT_Gandhinagar/IITGN.jpg'
 
 // Phone-width nav sheet. Same <nav> markup as the desktop row — the scroll-spy
 // observer and the pin-landing click handler both bind to `.portfolio-topbar
@@ -195,8 +201,8 @@ const signatureRef  = ref<HTMLElement | null>(null)
 // the entire runway.
 //
 // Runway layout (vh of scroll travel):
-//   0 ──────────── HERO_BUDGET_VH ──────── +DOOR_BUDGET_VH ── +DOOR_DWELL_VH
-//   hero zoom + signature │ doors split open │ hold on character │ release
+//   0 ─── HERO_BUDGET_VH ─── +DOOR_BUDGET_VH ── +DOOR_DWELL_VH ── +NARRATIVE_VH
+//   hero zoom + signature │ doors split │ settle │ 3-state story │ release
 // ────────────────────────────────────────────────────────────────────
 const doorProgressRef = ref(0)         // 0 = doors closed, 1 = fully open
 const characterDoorRef = ref(false)    // pre-mount HeroCharacter behind doors
@@ -208,9 +214,7 @@ let doorRafId: number | null = null
 let doorProgress = 0
 let doorProgressTarget = 0
 
-// Per-path metadata captured after v-html injects the SVG. Used to render the
-// signature as a sequential pen draw and to position the pen tip at the active
-// stroke head each frame.
+// ────────────────────────────────────────────────────────────────────
 type SigPath = { node: SVGPathElement; len: number; start: number }
 let sigPaths: SigPath[] = []
 let sigTotalLen = 0
@@ -449,12 +453,17 @@ function smoothstep(a: number, b: number, x: number) {
 // segments + one sticky viewport (100vh).
 const HERO_BUDGET_VH = 240
 const DOOR_BUDGET_VH = 150
-// Longer dwell than the original one-notch hold: viewers were flicking
-// straight past the character stage without ever discovering that the
-// head follows the cursor. ~4 wheel notches of pinned hold + the cursor
-// hint overlay give the interaction a chance to be seen.
-const DOOR_DWELL_VH  = 70
-const DRIVER_VH = 100 + HERO_BUDGET_VH + DOOR_BUDGET_VH + DOOR_DWELL_VH
+// Settle beat between the doors finishing and the story starting — the
+// reveal lands and the character is simply there for a moment before any
+// type moves. The long "discover the head-follow" hold that used to live
+// here is now the first narrative state's own dead zone.
+const DOOR_DWELL_VH  = 40
+// Three story states. One state per ~100vh: ~72vh of held, unmoving type
+// and ~28vh of handover, which is roughly one and a half wheel notches —
+// fast enough to feel authored, slow enough to read.
+const NARRATIVE_VH   = 300
+const DRIVER_VH =
+  100 + HERO_BUDGET_VH + DOOR_BUDGET_VH + DOOR_DWELL_VH + NARRATIVE_VH
 
 // Shared scroll geometry for the sticky hero/door stage. `scrolled` is how
 // far into the pinned runway we are (0 = stage just pinned). `heroBudgetPx`
@@ -472,10 +481,12 @@ function stageGeom() {
   // budgets from it would shift the segment boundaries under the user's
   // finger and make the stage jump. The driver is sized in svh (stable),
   // so travel only changes on real resizes.
-  const TRAVEL_VH = HERO_BUDGET_VH + DOOR_BUDGET_VH + DOOR_DWELL_VH
+  const TRAVEL_VH = HERO_BUDGET_VH + DOOR_BUDGET_VH + DOOR_DWELL_VH + NARRATIVE_VH
   const heroBudgetPx = travel * (HERO_BUDGET_VH / TRAVEL_VH)
   const doorBudgetPx = Math.max(1, travel * (DOOR_BUDGET_VH / TRAVEL_VH))
-  return { scrolled, heroBudgetPx, doorBudgetPx, travel }
+  const dwellPx      = travel * (DOOR_DWELL_VH / TRAVEL_VH)
+  const narrBudgetPx = Math.max(1, travel * (NARRATIVE_VH / TRAVEL_VH))
+  return { scrolled, heroBudgetPx, doorBudgetPx, dwellPx, narrBudgetPx, travel }
 }
 
 function onHeroScroll() {
@@ -486,11 +497,24 @@ function onHeroScroll() {
   // budget. Pure position → progress mapping; reverse scroll closes them.
   doorProgressTarget = Math.min(1, Math.max(0, (g.scrolled - g.heroBudgetPx) / g.doorBudgetPx))
   characterDoorRef.value = doorProgressTarget > 0.05
+  // Narrative segment starts after the doors have opened and settled — but the
+  // dwell before it is a signed LEAD-IN, not a dead zone. `p` runs -1 → 0
+  // across the dwell and 0 → 1 across the narrative, so the first story state
+  // writes itself on during the settle beat. Flooring it at 0 (as this used to)
+  // froze that state's last lines mid-reveal — half-masked and dimmed — for the
+  // whole door open, then snapped them into place once the narrative started.
+  const narrScrolled = g.scrolled - g.heroBudgetPx - g.doorBudgetPx - g.dwellPx
+  narrProgressTarget = narrScrolled >= 0
+    ? Math.min(1, narrScrolled / g.narrBudgetPx)
+    : Math.max(-1, narrScrolled / Math.max(1, g.dwellPx))
   if (heroRafId === null) {
     heroRafId = requestAnimationFrame(heroLoop)
   }
   if (doorRafId === null) {
     doorRafId = requestAnimationFrame(doorLoop)
+  }
+  if (narrRafId === null) {
+    narrRafId = requestAnimationFrame(narrLoop)
   }
 }
 
@@ -525,6 +549,31 @@ function doorLoop() {
   }
 }
 
+// Narrative scrub. Lighter smoothing than the door (0.22 vs 0.16) — the
+// type should feel tied to the wheel, while the gate has weight. The value is
+// handed to <HeroNarrative>, which owns the Motion bindings; nothing here
+// touches Vue reactivity, because a re-render would kill them (see the note
+// at the top of HeroNarrative.vue).
+const heroNarrativeRef = ref<{ publish: (p: number) => void; reset: () => void } | null>(null)
+let narrRafId: number | null = null
+// -1 is the floor, not 0: the dwell maps onto [-1, 0] as the first state's
+// lead-in (see onHeroScroll), so "nothing revealed yet" is -1.
+let narrProgress = -1
+let narrProgressTarget = -1
+
+function narrLoop() {
+  narrRafId = null
+  const diff = narrProgressTarget - narrProgress
+  if (Math.abs(diff) > 0.0005) {
+    narrProgress += diff * 0.22
+    heroNarrativeRef.value?.publish(narrProgress)
+    narrRafId = requestAnimationFrame(narrLoop)
+  } else {
+    narrProgress = narrProgressTarget
+    heroNarrativeRef.value?.publish(narrProgress)
+  }
+}
+
 // ────────────────────────────────────────────────────────────────────
 // Pinned staged sections (Education / Experience) + scroll-entrance
 // reveal choreography. Ported from the claude.ai/design prototype
@@ -533,6 +582,18 @@ function doorLoop() {
 const eduRef = ref<HTMLElement | null>(null)
 const xpRef = ref<HTMLElement | null>(null)
 const sectionCleanups: (() => void)[] = []
+
+// Campus photo scrub. It rides in on the same beat as the records strip —
+// slightly behind it, so the stat cells land first and the photo is the
+// closing note rather than a second thing competing for the same moment.
+// Past the landing it keeps drifting a few pixels up and settles a degree
+// off-square, which is what stops a pinned still frame from looking frozen
+// while the reader is still scrolling through it.
+const EDU_PHOTO_IN: [number, number] = [0.44, 0.66]
+const eduPhotoOpacity = transform([EDU_PHOTO_IN[0], 0.60], [0, 1], { clamp: true })
+const eduPhotoY = transform([EDU_PHOTO_IN[0], EDU_PHOTO_IN[1], 1], [44, 0, -14], { clamp: true })
+const eduPhotoScale = transform([EDU_PHOTO_IN[0], EDU_PHOTO_IN[1]], [0.9, 1], { clamp: true })
+const eduPhotoRot = transform([EDU_PHOTO_IN[0], EDU_PHOTO_IN[1], 1], [-6, 0, 1.4], { clamp: true })
 
 // Education: section is 240vh tall; content pins for the extra scroll.
 // Progress through the pin drives the stages — scrolling back reverses.
@@ -545,7 +606,118 @@ function setupEducationPin(): (() => void) | null {
   // after another section's rAF has written styles forces a synchronous
   // layout, and with four scroll-driven sections that thrash repeats every
   // scrolled frame.
-  let headIn = false, stageName = false, stageDetails = false
+  let headIn = false, stageName = false, stageDetails = false, prog = 0
+
+  const pin = sec.querySelector<HTMLElement>('.edu-pin')
+  const photo = sec.querySelector<HTMLElement>('.edu-photo')
+  const detailsEl = sec.querySelector<HTMLElement>('.edu-details')
+  // Everything that owns horizontal space beside the photo's side slot. The
+  // display lines are `width: max-content`, but the heading, degree and honour
+  // lines are full-width blocks, so their box tells us nothing — a Range over
+  // the contents gives the real ink extent of each.
+  const spanEls = Array.from(
+    sec.querySelectorAll<HTMLElement>(
+      '.section-num, .section-title, .edu-name-line, .edu-name-meta, .edu-degree, .edu-gold',
+    ),
+  )
+  // The records block is a ruled box, not loose type — its border is the edge
+  // to clear, so it is measured by box and not by ink.
+  const stripEl = sec.querySelector<HTMLElement>('.edu-strip')
+  const measureRange = typeof document !== 'undefined' ? document.createRange() : null
+
+  // Breathing room the photo keeps from the type, the upward drift it is
+  // allowed at the end of the scrub, and the size band outside which it stops
+  // being a photograph and becomes either a stamp or the whole section. The
+  // asset is a bordered polaroid, so roughly a third of its box is frame —
+  // under ~160px the picture inside is smaller than a favicon, which is why
+  // phone widths (where the pinned stack already fills the screen) drop it
+  // rather than shrink it.
+  const PHOTO_GAP = 28
+  const PHOTO_DRIFT = 16
+  const PHOTO_MIN = 160
+  const PHOTO_MAX = 560
+
+  function inkRight(el: HTMLElement) {
+    if (!measureRange) return el.getBoundingClientRect().right
+    measureRange.selectNodeContents(el)
+    const box = measureRange.getBoundingClientRect()
+    return box.width ? box.right : el.getBoundingClientRect().right
+  }
+
+  /**
+   * Park the photo in the largest square the pinned type leaves unused, and
+   * hide it when that square would be too small to read as a photograph.
+   * Two candidate slots, both flush to the right edge of the text column:
+   *
+   *   side  — the full-height column to the right of everything, bounded by
+   *           the widest line of type or the records block. Wins on wide
+   *           viewports, where the name is the only wide thing on the page.
+   *   below — the band under the records strip, down to the pin's padding.
+   *           Wins on tall viewports (tablet portrait), where the pinned
+   *           stack leaves a third of the screen empty at the bottom.
+   *
+   * Everything is measured against the pin's own box, so the result does not
+   * change while the pin is stuck and this only has to run on resize.
+   */
+  function fitPhoto() {
+    if (!photo || !pin || !detailsEl) return
+    const pinBox = pin.getBoundingClientRect()
+    const cs = getComputedStyle(pin)
+    const padR = parseFloat(cs.paddingRight) || 0
+    const padB = parseFloat(cs.paddingBottom) || 0
+    const contentRight = pinBox.right - padR
+    const contentLeft = pinBox.left + (parseFloat(cs.paddingLeft) || 0)
+    const contentTop = pinBox.top + (parseFloat(cs.paddingTop) || 0)
+    const detailsBox = detailsEl.getBoundingClientRect()
+
+    let typeRight = contentLeft
+    for (const el of spanEls) typeRight = Math.max(typeRight, inkRight(el))
+    if (stripEl) typeRight = Math.max(typeRight, stripEl.getBoundingClientRect().right)
+
+    const contentBottom = pinBox.bottom - padB
+    const sideW = contentRight - (typeRight + PHOTO_GAP)
+    const sideH = contentBottom - PHOTO_DRIFT - contentTop
+    const side = Math.min(sideW, sideH)
+
+    const belowTop = detailsBox.bottom + PHOTO_GAP + PHOTO_DRIFT
+    const belowH = contentBottom - belowTop
+    // Half the column, or a tablet's empty bottom third turns into a poster.
+    const below = Math.min(belowH, (contentRight - contentLeft) * 0.5)
+
+    const size = Math.min(PHOTO_MAX, Math.max(side, below))
+    if (size < PHOTO_MIN) {
+      photo.hidden = true
+      return
+    }
+    photo.hidden = false
+    const useSide = side >= below
+    const top = useSide
+      ? contentTop + (contentBottom - contentTop - size) / 2
+      : belowTop + (contentBottom - belowTop - size) / 2
+    photo.style.setProperty('--ep-size', `${Math.round(size)}px`)
+    photo.style.setProperty('--ep-x', `${Math.round(contentRight - size - pinBox.left)}px`)
+    photo.style.setProperty('--ep-y', `${Math.round(top - pinBox.top)}px`)
+  }
+
+  // Rounded-then-compared like every other scrub on this page: a style write
+  // that renders identically still costs a recalc, and this one shares a frame
+  // with three other pinned sections.
+  let lastOpacity = -1, lastTransform = ''
+  function writePhoto() {
+    if (!photo || photo.hidden) return
+    const o = Math.round(eduPhotoOpacity(prog) * 1000) / 1000
+    if (o !== lastOpacity) {
+      lastOpacity = o
+      photo.style.opacity = `${o}`
+    }
+    const t = `translate3d(0, ${eduPhotoY(prog).toFixed(1)}px, 0) `
+      + `rotate(${eduPhotoRot(prog).toFixed(2)}deg) `
+      + `scale(${eduPhotoScale(prog).toFixed(3)})`
+    if (t !== lastTransform) {
+      lastTransform = t
+      photo.style.transform = t
+    }
+  }
 
   function readScroll() {
     const rect = sec!.getBoundingClientRect()
@@ -554,6 +726,7 @@ function setupEducationPin(): (() => void) | null {
     headIn = rect.top < innerHeight * 0.92
     stageName = p >= 0.14
     stageDetails = p >= 0.48
+    prog = p
   }
   function write() {
     raf = 0
@@ -561,28 +734,47 @@ function setupEducationPin(): (() => void) | null {
     sec!.classList.toggle('head-in', headIn)
     sec!.classList.toggle('stage-name', stageName)
     sec!.classList.toggle('stage-details', stageDetails)
+    writePhoto()
   }
   function onScroll() {
     readScroll()
     if (!raf) raf = requestAnimationFrame(write)
   }
+  function onResize() {
+    fitPhoto()
+    onScroll()
+  }
 
   function apply() {
     const on = !mqMotion.matches
     sec!.classList.toggle('edu-staged', on)
+    fitPhoto()
     if (on) {
       addEventListener('scroll', onScroll, { passive: true })
       onScroll()
     } else {
       removeEventListener('scroll', onScroll)
       sec!.classList.remove('stage-name', 'stage-details', 'head-in')
+      // Reduced motion keeps the photo, drops the scrub — hand it back to CSS.
+      if (photo) {
+        photo.style.opacity = ''
+        photo.style.transform = ''
+      }
+      lastOpacity = -1
+      lastTransform = ''
     }
   }
   mqMotion.addEventListener?.('change', apply)
+  addEventListener('resize', onResize, { passive: true })
+  // The slot is bounded by where the display type ends, so it can only be
+  // measured once the real face is swapped in for the fallback metrics.
+  document.fonts?.ready.then(onResize).catch(() => {})
   apply()
   return () => {
     mqMotion.removeEventListener?.('change', apply)
     removeEventListener('scroll', onScroll)
+    removeEventListener('resize', onResize)
+    measureRange?.detach()
     if (raf) cancelAnimationFrame(raf)
   }
 }
@@ -1329,6 +1521,7 @@ onMounted(() => {
   if (driver) {
     driver.style.setProperty('--hs-driver-vh', `${DRIVER_VH}`)
   }
+
   // Slot shape comes from .im-frame's aspect-ratio (CSS, with a portrait
   // media-query override on compact viewports) — the slot fills the frame,
   // and applyHeroTransform reads the same heroSlotAR() so the crop and the
@@ -1480,6 +1673,8 @@ onBeforeUnmount(() => {
   heroRafId = null
   if (doorRafId !== null) cancelAnimationFrame(doorRafId)
   doorRafId = null
+  if (narrRafId !== null) cancelAnimationFrame(narrRafId)
+  narrRafId = null
   // Reset stage state — module-scope vars otherwise leak across remounts
   // (HMR, route re-entry).
   doorProgress = 0
@@ -1488,6 +1683,9 @@ onBeforeUnmount(() => {
   characterDoorRef.value = false
   heroProgress = 0
   heroProgressTarget = 0
+  narrProgress = -1
+  narrProgressTarget = -1
+  heroNarrativeRef.value?.reset()
 })
 </script>
 
@@ -1541,17 +1739,10 @@ onBeforeUnmount(() => {
             :paused="doorProgressRef < 0.001"
           />
           <div v-else class="cr-character-placeholder" aria-hidden="true"></div>
-          <div class="cr-overlay">
-            <span class="cr-top">— Meet Adarsh</span>
-            <div></div>
-            <div class="cr-bottom">
-              <h2 class="cr-headline">A <em>moving</em> operator — on a mission to fuel the next generation of builders.</h2>
-              <div class="cr-meta-stack">
-                <p class="cr-hint"><span class="cr-hint-dot" aria-hidden="true"></span>Move your cursor — he follows</p>
-                <p class="cr-meta">Scroll to enter the work →</p>
-              </div>
-            </div>
-          </div>
+          <!-- Three scroll-scrubbed story states. Its own component so that
+               Portfolio.vue re-renders can't tear down its Motion bindings —
+               see the note at the top of HeroNarrative.vue. -->
+          <HeroNarrative ref="heroNarrativeRef" />
         </div>
 
         <!-- P2 front-stack — wraps the real intro-message + landed HeroSection
@@ -1789,6 +1980,20 @@ onBeforeUnmount(() => {
           </div>
 
         </div>
+
+        <!-- Campus photo. Absolutely positioned and measured into whatever
+             space the type leaves over (see setupEducationPin → fitPhoto), so
+             it cannot reflow, resize or re-wrap a single existing line. -->
+        <figure class="edu-photo" hidden>
+          <img
+            :src="iitgnCampusImg"
+            width="550"
+            height="550"
+            loading="lazy"
+            decoding="async"
+            alt="IIT Gandhinagar campus — the academic block clock tower"
+          />
+        </figure>
       </div>
     </section>
 
@@ -2175,8 +2380,8 @@ onBeforeUnmount(() => {
      svh (not vh): on mobile, vh tracks the URL-bar collapse and resizes the
      stage mid-scroll — svh is the stable small-viewport height. Plain-vh
      line kept first as fallback for browsers without svh support. */
-  height: calc(var(--hs-driver-vh, 505) * 1vh - var(--topbar-h));
-  height: calc(var(--hs-driver-vh, 505) * 1svh - var(--topbar-h));
+  height: calc(var(--hs-driver-vh, 830) * 1vh - var(--topbar-h));
+  height: calc(var(--hs-driver-vh, 830) * 1svh - var(--topbar-h));
 }
 .hs-sticky {
   position: sticky;
@@ -2656,92 +2861,6 @@ main > section.section {
   inset: 0;
   z-index: 1;
 }
-.hs-sticky .cr-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-  padding: clamp(2rem, 6vh, 5rem) clamp(1.5rem, 4vw, 4rem);
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  color: #F2F3EC;
-  opacity: clamp(0, calc(var(--door-progress, 0) * 2 - 0.6), 1);
-  transform: translateY(calc((1 - var(--door-progress, 0)) * 20px));
-}
-.hs-sticky .cr-top {
-  font: 500 0.7rem/1 var(--f-mono);
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: rgba(242,243,236,0.7);
-}
-.hs-sticky .cr-bottom {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 1rem;
-}
-/* Sized for the long form of the line ("…on a mission to fuel the next
-   generation of builders", ~73 chars): the old 18ch/4.5rem setting was tuned
-   for a 33-char line and pushed this one to five oversized lines that
-   overflowed the overlay's bottom row. 24ch + a lower clamp ceiling lands it
-   at three balanced lines on desktop without shrinking it into body copy. */
-.hs-sticky .cr-headline {
-  font: 900 clamp(1.5rem, 3.1vw, 2.9rem)/1 var(--f-sans);
-  letter-spacing: -0.04em;
-  text-transform: uppercase;
-  max-width: 24ch;
-  text-wrap: balance;
-}
-.hs-sticky .cr-headline em {
-  font-style: normal;
-  color: var(--accent);
-}
-.hs-sticky .cr-meta {
-  font: 500 0.68rem/1.5 var(--f-mono);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: rgba(242,243,236,0.55);
-  text-align: right;
-}
-.hs-sticky .cr-meta-stack {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.65rem;
-}
-/* cursor-follow hint — the reason the dwell exists. Accent-coloured and
-   gently pulsing so a passing eye catches it before scrolling on. */
-.hs-sticky .cr-hint {
-  display: flex;
-  align-items: center;
-  gap: 0.55em;
-  font: 600 0.68rem/1.5 var(--f-mono);
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  /* Warm white, not accent: the CTA below is the corner's one accent
-     element — the hint informs, the button invites. Dot stays accent. */
-  color: rgba(242, 243, 236, 0.78);
-  animation: cr-hint-pulse 2.4s ease-in-out infinite;
-}
-.hs-sticky .cr-hint-dot {
-  width: 0.5em;
-  height: 0.5em;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 0 var(--accent);
-  animation: cr-hint-dot 2.4s ease-in-out infinite;
-}
-@keyframes cr-hint-pulse {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
-}
-@keyframes cr-hint-dot {
-  0%, 100% { transform: scale(0.8); }
-  50% { transform: scale(1.15); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .hs-sticky .cr-hint, .hs-sticky .cr-hint-dot { animation: none; }
-}
 /* Résumé CTA — single element on the sticky stage's top layer (above
    hs-front z5 and the door halves z3). Position mirrors im-top's old CTA
    cell: its top/right offsets equal im-top's padding, so it sits exactly
@@ -2771,24 +2890,6 @@ main > section.section {
 }
 .hs-sticky .hs-resume:hover { transform: translateY(-2px); filter: brightness(1.05); }
 .hs-sticky .hs-resume svg { width: 14px; height: 14px; }
-/* Touch devices have no cursor to move — the hint is wrong copy there, and
-   on phone widths it collides with the headline. Head-follow still works
-   via touch-drag; the stage just doesn't advertise it with cursor copy. */
-@media (hover: none) {
-  .hs-sticky .cr-hint { display: none; }
-}
-/* Narrow viewports: the two-column bottom row (headline 1fr | meta auto)
-   runs out of room — the meta stack lands on top of the headline's last
-   line. Stack them instead. */
-@media (max-width: 720px) {
-  .hs-sticky .cr-bottom {
-    grid-template-columns: 1fr;
-    justify-items: start;
-    gap: 1.1rem;
-  }
-  .hs-sticky .cr-meta-stack { align-items: flex-start; }
-  .hs-sticky .cr-meta { text-align: left; }
-}
 
 /* ────────────────────────────────────────────────────────────
    Page-2 front-stack wrapper — wraps the real intro-message +
@@ -3575,10 +3676,12 @@ main > section.section {
   #extra .yr-group::before { transform: none !important; }
 }
 
-/* education tagline strip */
+/* education records block — 2×2, and deliberately not full-bleed: keeping it
+   to a half-column is what frees the right of the pin for the campus photo. */
 .edu-strip {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: 1fr 1fr;
+  width: min(100%, 38rem);
   border: 1px solid var(--rule);
   margin-top: 1.5rem;
 }
@@ -3586,12 +3689,8 @@ main > section.section {
   padding: 1.1rem 1.2rem;
   display: flex; flex-direction: column; gap: 0.4rem;
 }
-.edu-strip .cell + .cell { border-left: 1px solid var(--rule); }
-@media (max-width: 720px) {
-  .edu-strip { grid-template-columns: 1fr 1fr; }
-  .edu-strip .cell:nth-child(3) { border-left: 0; border-top: 1px solid var(--rule); }
-  .edu-strip .cell:nth-child(4) { border-top: 1px solid var(--rule); }
-}
+.edu-strip .cell:nth-child(2n) { border-left: 1px solid var(--rule); }
+.edu-strip .cell:nth-child(n + 3) { border-top: 1px solid var(--rule); }
 .edu-strip .k {
   font: 500 0.6rem/1 var(--f-mono);
   letter-spacing: 0.18em;
@@ -3723,7 +3822,9 @@ main > section.section {
    Stage 2 · degree, records strip, visuals rise in below
    ════════════════════════════════════════════════════════════ */
 #education.edu-staged { height: 240vh; padding: 0; min-height: 0; }
-#education .edu-pin { display: flex; flex-direction: column; min-height: 0; }
+/* `relative` only so the campus photo has a containing block to be parked in
+   — no offsets, so nothing in the flex column moves. */
+#education .edu-pin { display: flex; flex-direction: column; min-height: 0; position: relative; }
 #education.edu-staged .edu-pin {
   position: sticky;
   /* pin BELOW the sticky topbar (not behind it) so the heading keeps
@@ -3788,6 +3889,27 @@ main > section.section {
   align-items: end;
 }
 
+/* campus photo — out of flow entirely. Position and size come from
+   fitPhoto(), which measures the space the type does not use; the element
+   itself only ever reads those three custom properties, so a viewport where
+   nothing fits simply gets `hidden` and the section is exactly as it was. */
+#education .edu-photo {
+  position: absolute;
+  margin: 0;
+  left: var(--ep-x, 0px);
+  top: var(--ep-y, 0px);
+  width: var(--ep-size, 0px);
+  height: var(--ep-size, 0px);
+  pointer-events: none;
+}
+#education .edu-photo[hidden] { display: none; }
+#education .edu-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
 /* stage motion — JS adds .edu-staged only when pinning is active */
 @media (prefers-reduced-motion: no-preference) {
   #education.edu-staged .edu-name-line,
@@ -3814,6 +3936,12 @@ main > section.section {
   #education.edu-staged.stage-details .edu-detail {
     opacity: 1;
     transform: none;
+  }
+  /* First paint before the scrub has written anything. Everything after this
+     is inline style from writePhoto(). */
+  #education.edu-staged .edu-photo {
+    opacity: 0;
+    will-change: transform, opacity;
   }
 }
 
