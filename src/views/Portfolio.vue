@@ -2617,8 +2617,8 @@ onBeforeUnmount(() => {
             <div class="aw-beam" aria-hidden="true"><i></i><b></b></div>
             <ul class="bullets aw-bullets">
               <li><strong><em>Gold Medalist — Outstanding Social Service (IITGN, Convocation 2023)</em></strong> — institute Gold Medal for contribution to student welfare, campus operations, and community leadership.</li>
-              <li><strong>Anchors Elite (Q2 FY25)</strong> — selected among 51 employees across Axis Bank pan-India for exceptional impact and delivery.</li>
-              <li><strong>Anchors Team Player (Q2 FY25)</strong> — awarded for high-ownership collaboration and cross-team execution under pressure.</li>
+              <li><strong>Anchors Elite</strong> — selected among 51 employees across Axis Bank pan-India for exceptional impact and delivery.</li>
+              <li><strong>Anchors Team Player</strong> — awarded for high-ownership collaboration and cross-team execution under pressure.</li>
               <li><strong>BIU Team Award</strong> — recognised for end-to-end delivery of the profit score automation program with TCS.</li>
               <li><strong>Agile &amp; Jira adoption lead</strong> — part of a 6-member SWAT team driving Jira rollout and Agile project management adoption across the Data Science vertical and cross-functional teams.</li>
               <li><strong>Dean's List</strong> — Semester 4, 2021; awarded to meritorious students.</li>
@@ -2697,6 +2697,7 @@ onBeforeUnmount(() => {
           <span class="skill-tag">Prompt Engineering</span>
           <span class="skill-tag">Claude</span>
           <span class="skill-tag">ChatGPT</span>
+          <span class="skill-tag">Gemini</span>
           <span class="skill-tag">MCP connections</span>
           <span class="skill-tag">Cursor</span>
           <span class="skill-tag">AI-Assisted Design</span>
