@@ -116,6 +116,11 @@ const NARR_LIFT = narrReduced ? '0%' : '-70%'   // …exit up through the top
 const NARR_LEAD = 0.72
 const NARR_ENTER_FIRST: [number, number] = [-0.62, -0.22]
 
+// How far the annotation marks trail the line they belong to. Named because
+// the handover bands below have to know when the last thing on screen has
+// stopped moving, and it is always a mark.
+const NARR_MARK_LAG = 0.13
+
 // Stage-space position: 0 → NARR_STAGES. State i owns [i, i+1). Handover
 // costs ~0.35 of that; the rest is a dead hold where nothing moves at all.
 // Every curve below is a pure function of that position, which is what makes
@@ -153,12 +158,39 @@ const narrStages = NARRATIVE.map((lines, i) => {
         opacity: transform(stops, [0, 1, 1, 0], { clamp: true }),
         // Annotation marks trail the line they belong to, so the schematic
         // draws itself after the type lands instead of racing it.
-        mark: transform([inB - 0.01, inB + 0.13, outA, outA + 0.06], [0, 1, 1, 0], { clamp: true }),
+        mark: transform([inB - 0.01, inB + NARR_MARK_LAG, outA, outA + 0.06], [0, 1, 1, 0], { clamp: true }),
       })
       return line
     }),
   }
 })
+
+/* ── where a state change is in flight ─────────────────────────────────────
+   Every position in the scrub is reachable, including the middle of a
+   handover — outgoing state half gone, incoming one half arrived — which is a
+   composition that was only ever meant to be passed through, with nothing on
+   screen to say how much further it costs to finish. The parent keeps the
+   page from coming to rest in one (see the settle logic in Portfolio.vue),
+   and these are the slices it has to steer out of.
+
+   A handover opens the instant the outgoing state's first line starts to lift
+   and closes when the incoming state's last annotation mark has finished
+   drawing — the last thing still moving. Derived from the windows above
+   rather than typed out, so retuning the choreography moves the bands with
+   it. Given in the parent's units: p runs 0 → 1 across the whole narrative
+   segment, which is what it measures scroll in. */
+const NARR_MAX_LINES = Math.max(...NARRATIVE.map((lines) => lines.length))
+const NARR_HANDOVER_OPEN = NARR_EXIT[0]
+const NARR_HANDOVER_SHUT =
+  1 + NARR_ENTER[1] + (NARR_MAX_LINES - 1) * NARR_STAG + NARR_MARK_LAG
+
+const handoverBands: [number, number][] = Array.from(
+  { length: NARR_STAGES - 1 },
+  (_, k) => [
+    (k + NARR_HANDOVER_OPEN) / NARR_STAGES,
+    (k + NARR_HANDOVER_SHUT) / NARR_STAGES,
+  ],
+)
 
 // The rail is the frame the type hangs on, so it draws downward just ahead of
 // the first line instead of standing empty through the whole post-door beat.
@@ -279,7 +311,7 @@ function reset() {
   publish(-1)
 }
 
-defineExpose({ publish, reset })
+defineExpose({ publish, reset, handoverBands })
 </script>
 
 <template>

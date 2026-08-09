@@ -48,7 +48,7 @@ const CORPORATE_PROJECTS: CorporateProject[] = [
     num: '01',
     name: 'Modular Production Framework across Retail Asset Models',
     org: 'Axis Bank',
-    role: 'Manager / Senior Manager',
+    role: 'Senior Manager',
     when: 'July, 2023 – Present · Mumbai',
     color: '#14180E',
     highlights: [
@@ -70,7 +70,7 @@ const CORPORATE_PROJECTS: CorporateProject[] = [
     num: '02',
     name: 'Credit Card Profitability Framework Transformation',
     org: 'Axis Bank',
-    role: 'Manager / Senior Manager',
+    role: 'Senior Manager',
     when: 'May, 2023 – Present · Mumbai',
     color: '#0E1311',
     highlights: [

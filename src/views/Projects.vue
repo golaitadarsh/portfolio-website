@@ -60,7 +60,7 @@ const showCard = (cat: 'corporate' | 'academic') =>
           <span class="ptype">Framework Build</span>
         </div>
         <h3>Modular production framework — built from zero, <em>adopted unmodified</em> by external TCS engineering team.</h3>
-        <p class="prole">Manager → Senior Manager · sole architect &amp; owner</p>
+        <p class="prole">Senior Manager · sole architect &amp; owner</p>
         <p class="pbody">
           Architected and shipped a modular PySpark forecasting framework — 7 reusable modules driven by a single parameter file. Migrated 3 product models end-to-end from legacy SAS to PySpark, eliminated spreadsheet dependencies, and transitioned every model to governed star-schema tables. Same framework picked up unmodified by TCS — generalised architecture validated externally.
         </p>
@@ -108,7 +108,7 @@ const showCard = (cat: 'corporate' | 'academic') =>
           <span>May 2023 — Present</span>
         </div>
         <h3>Credit Card Profitability Pipeline — <em>90% turnaround cut</em>.</h3>
-        <p class="prole">Manager / Senior Manager · end-to-end production owner</p>
+        <p class="prole">Senior Manager · end-to-end production owner</p>
         <p class="pbody">
           Redesigned the CCPS data pipeline and automated input validation: monthly delivery turnaround dropped from 2–3 days to 3 hours. Owned end-to-end production of an account-level profitability model — revenue, reward cost, credit cost, fee components — whose outputs drove KPIs for Credit Card leadership and field sales across 12+ cycles.
         </p>

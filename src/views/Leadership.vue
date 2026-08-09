@@ -102,19 +102,40 @@ onMounted(() => {
   const entries = Array.from(wrap.querySelectorAll<HTMLElement>('.entry'))
   const lis = Array.from(wrap.querySelectorAll<HTMLElement>('.bullets > li'))
 
+  /* Node-dots resolved once — `li.querySelector('.nd')` inside the frame loop
+     was a tree walk per bullet per frame, for the life of the rail. */
+  const nds = lis.map((li) => li.querySelector('.nd'))
+  /* Scratch arrays, reused every frame so the loop allocates nothing. */
+  const entryTops: number[] = new Array(entries.length)
+  const liTops: number[] = new Array(lis.length)
+
   const frame = () => {
+    /* ── READ phase ─────────────────────────────────────────────────────
+       Every rect is taken BEFORE the first style write. Interleaving them
+       (which this did) forces a synchronous layout per element per frame:
+       the `tip.style.height` write dirties layout, and the very next
+       getBoundingClientRect has to flush it — then each classList.toggle
+       dirties it again for the following read. */
     const r = wrap.getBoundingClientRect()
     const t = motionOK
       ? Math.max(0, Math.min(r.height, window.innerHeight * 0.72 - r.top))
       : r.height
+    for (let i = 0; i < entries.length; i++) {
+      entryTops[i] = entries[i].getBoundingClientRect().top - r.top
+    }
+    for (let i = 0; i < lis.length; i++) {
+      liTops[i] = lis[i].getBoundingClientRect().top - r.top
+    }
+
+    /* ── WRITE phase ────────────────────────────────────────────────── */
     tip.style.height = `${t}px`
 
-    entries.forEach((e) => {
-      e.classList.toggle('on', t >= e.getBoundingClientRect().top - r.top + 8)
+    entries.forEach((e, i) => {
+      e.classList.toggle('on', t >= entryTops[i] + 8)
     })
-    lis.forEach((li) => {
-      const nd = li.querySelector('.nd')
-      const y = li.getBoundingClientRect().top - r.top + 12
+    lis.forEach((li, i) => {
+      const nd = nds[i]
+      const y = liTops[i] + 12
       if (t >= y) {
         if (!li.classList.contains('on')) {
           li.classList.add('on')

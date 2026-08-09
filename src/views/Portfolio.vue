@@ -274,7 +274,113 @@ function syncTopbarH() {
   }
 }
 
+/**
+ * Measured fit-to-pin, shared by the pinned stages (education, experience).
+ *
+ * Every pinned stage is an `overflow: hidden` box exactly one viewport tall,
+ * and its type is sized off clamps that mix vw and vh terms. That works on the
+ * display it was tuned against and nowhere else: the vh term shrinks with the
+ * viewport but the rem floors and the WRAP COUNT do not, so a 1366x670 laptop
+ * (the most common laptop resolution there is) ran 78px of the Experience
+ * stats panel past the pin's bottom edge, and a 375x553 phone lost the whole
+ * Education records strip — 154px of content, silently clipped, with nothing
+ * on screen to say it was ever there.
+ *
+ * Same remedy #summary already uses: measure what actually rendered, publish a
+ * multiplier, let the clamps in CSS keep expressing intent. `--x-fit` is 1
+ * whenever the content already fits, so nothing on a large display moves.
+ */
+// How far past the pin's padding edge the content may still sit at the fit
+// floor before the stage gives up the pin entirely. A few px is invisible
+// (and inside the pin's own bottom padding); tens of px is a clipped row.
+const PIN_GIVE_UP_PX = 8
+
+function pinOverflowPx(pin: HTMLElement): number {
+  const pr = pin.getBoundingClientRect()
+  const cs = getComputedStyle(pin)
+  const floorY = pr.bottom - parseFloat(cs.paddingBottom)
+  let worst = 0
+  // Walks the tree and PRUNES rather than filtering flat, because what has to
+  // be excluded is a whole subtree, not an element. Out-of-flow children here
+  // are either decorative bleed (the medal aura is authored to run past its
+  // box) or already fitted into the space the flow left over (the campus
+  // photo, positioned by fitPhoto) — scaling the type can't move either, so
+  // counting them would shrink the copy to chase a box that follows it down.
+  // Filtering only the absolute element itself missed its static <img> child,
+  // which is exactly how the second fit pass (the one after fonts.ready, by
+  // which time the photo had been placed) came back with a phantom 42px and
+  // un-pinned a stage that fit perfectly well.
+  const walk = (node: HTMLElement) => {
+    for (let c = node.firstElementChild; c; c = c.nextElementSibling) {
+      const el = c as HTMLElement
+      const s = getComputedStyle(el)
+      if (s.display === 'none' || s.visibility === 'hidden') continue
+      if (s.position === 'absolute' || s.position === 'fixed') continue
+      const r = el.getBoundingClientRect()
+      if (r.width >= 2 && r.height >= 2) {
+        const over = r.bottom - floorY
+        if (over > worst) worst = over
+      }
+      walk(el)
+    }
+  }
+  walk(pin)
+  return worst
+}
+
+/**
+ * Shrink `sec`'s type until its pinned content clears the pin's bottom edge.
+ * Iterated rather than solved: scaling the type re-wraps it, so the height it
+ * needs moves in steps, not proportionally. Bails at `floor` — past that the
+ * copy is unreadable and clipping is the lesser evil (the callers pick a floor
+ * they can defend, and the stage un-pins entirely below it).
+ */
+function fitPin(
+  sec: HTMLElement,
+  pin: HTMLElement,
+  varName: string,
+  floor: number,
+): { fit: number; over: number } {
+  sec.style.setProperty(varName, '1')
+  // `.is-fitting` parks every entrance transform for the duration of the
+  // measurement. getBoundingClientRect reports the TRANSFORMED box, and these
+  // stages start their content translated down by 16-26px — measuring through
+  // that reads the offset as content and shrinks the type to make room for a
+  // gap that is not there (education came out at 0.76 on a 1366x670 laptop
+  // when 0.93 was the honest answer). Nothing paints between the class going
+  // on and coming off: it is all one synchronous task.
+  sec.classList.add('is-fitting')
+  const cs = getComputedStyle(pin)
+  const availH = pin.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
+  let fit = 1
+  let over = 0
+  if (availH > 0) {
+    for (let i = 0; i < 5; i++) {
+      over = pinOverflowPx(pin)
+      if (over <= 0) break
+      // Shrink by the ratio the content needs, with a hair of slack so a
+      // sub-pixel residue doesn't cost another whole pass.
+      fit = Math.max(floor, (fit * availH * 0.99) / (availH + over))
+      sec.style.setProperty(varName, fit.toFixed(4))
+      if (fit === floor) break
+    }
+    // Re-read after the last write, unconditionally: the loop's `over` is
+    // always the value BEFORE that pass's shrink, so exiting on the iteration
+    // cap (or on the floor) would otherwise hand the caller a stale positive
+    // and un-pin a stage that had just been made to fit.
+    over = pinOverflowPx(pin)
+  }
+  sec.classList.remove('is-fitting')
+  // `over` is the residual AT the returned fit: callers use it to decide
+  // whether the floor was enough or the stage has to give up the pin.
+  return { fit, over }
+}
+
 let scrollSpy: IntersectionObserver | null = null
+// Late scroll-to-top nudges fired from onMounted — see the note at their
+// scheduling site for why they have to be cancellable.
+let pinTopTimers: number[] = []
+let pinTopLoadListener: (() => void) | null = null
 let warmIdleId: number | null = null
 let warmTimerId: number | null = null
 let warmLoadListener: (() => void) | null = null
@@ -297,6 +403,10 @@ const sectionToNav: Record<string, string | null> = {
   extra: 'por',
   awards: 'awards',
   skills: 'skills',
+  // The contact block IS the page footer (<footer id="contact">), so the nav
+  // item and the scroll-spy target are the same element every other section
+  // already uses — no extra anchor, no duplicated contact details.
+  contact: 'contact',
 }
 
 function measureHeroSlot() {
@@ -507,6 +617,12 @@ function onHeroScroll() {
   narrProgressTarget = narrScrolled >= 0
     ? Math.min(1, narrScrolled / g.narrBudgetPx)
     : Math.max(-1, narrScrolled / Math.max(1, g.dwellPx))
+  // Every scroll event re-arms the settle: it fires only once they stop.
+  if (narrProgressTarget !== settleLastP) {
+    if (settleLastP >= -1) settleDir = narrProgressTarget >= settleLastP ? 1 : -1
+    settleLastP = narrProgressTarget
+  }
+  settleSchedule()
   if (heroRafId === null) {
     heroRafId = requestAnimationFrame(heroLoop)
   }
@@ -554,7 +670,11 @@ function doorLoop() {
 // handed to <HeroNarrative>, which owns the Motion bindings; nothing here
 // touches Vue reactivity, because a re-render would kill them (see the note
 // at the top of HeroNarrative.vue).
-const heroNarrativeRef = ref<{ publish: (p: number) => void; reset: () => void } | null>(null)
+const heroNarrativeRef = ref<{
+  publish: (p: number) => void
+  reset: () => void
+  handoverBands: [number, number][]
+} | null>(null)
 let narrRafId: number | null = null
 // -1 is the floor, not 0: the dwell maps onto [-1, 0] as the first state's
 // lead-in (see onHeroScroll), so "nothing revealed yet" is -1.
@@ -572,6 +692,90 @@ function narrLoop() {
     narrProgress = narrProgressTarget
     heroNarrativeRef.value?.publish(narrProgress)
   }
+}
+
+// ── slide settle ────────────────────────────────────────────────────────────
+// The story is a scrub, so every position in it is reachable — including the
+// middle of a handover, where one state is half gone and the next half
+// arrived. That composition was only ever meant to be passed through, and
+// nothing on screen tells a reader who stopped there how much further it
+// costs to finish, so they are left holding a broken frame wondering whether
+// the page is stuck.
+//
+// So when scrolling stops inside a handover, the page carries it the rest of
+// the way: scroll on to whichever end of the band is nearer, biased toward the
+// direction of travel, and let the ordinary scrub play the rest at its
+// authored speed. NOTHING about the animation changes — not its length, not
+// its shape, not its reversibility. The only thing this decides is where the
+// page is allowed to come to rest. Outside the bands it never fires at all.
+//
+// HeroNarrative owns the band positions, because they fall out of the same
+// windows the choreography is authored in (see `handoverBands` there).
+const SETTLE_IDLE_MS    = 150   // quiet time that counts as "stopped scrolling"
+// Fraction of the band that commits you onward. Deliberately below half when
+// travelling forward: a reader who has already started the move usually meant
+// to make it, and pulling them backwards past type that has begun to leave
+// reads as the page refusing the scroll.
+const SETTLE_BIAS       = 0.35
+const SETTLE_MARGIN_P   = 0.02  // land this far clear of the band edge
+const SETTLE_DEADBAND_P = 0.01  // already this close to the edge: leave it be
+
+let settleTimerId: number | null = null
+let settleTouching = false
+// Direction of travel, from the last progress change — a settle should finish
+// the move the reader was making, not average over both.
+let settleDir = 1
+let settleLastP = -1
+
+function settleCancel() {
+  if (settleTimerId !== null) clearTimeout(settleTimerId)
+  settleTimerId = null
+}
+
+function settleSchedule() {
+  settleCancel()
+  settleTimerId = window.setTimeout(settleRun, SETTLE_IDLE_MS)
+}
+
+function settleRun() {
+  settleTimerId = null
+  // A finger still on the glass is not a reader who has stopped — iOS is
+  // mid-gesture and would fight the programmatic scroll.
+  if (settleTouching) return
+  // This moves the page on the reader's behalf, which is exactly the kind of
+  // motion the preference opts out of.
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  const bands = heroNarrativeRef.value?.handoverBands
+  const driver = heroDriverRef.value
+  if (!bands || !driver) return
+  const g = stageGeom()
+  if (!g) return
+  const p = narrProgressTarget
+  if (p <= 0 || p >= 1) return
+  for (const [a, b] of bands) {
+    if (p <= a || p >= b) continue
+    const through = (p - a) / (b - a)
+    const onward = through >= (settleDir >= 0 ? SETTLE_BIAS : 1 - SETTLE_BIAS)
+    const to = onward ? Math.min(1, b + SETTLE_MARGIN_P) : Math.max(0, a - SETTLE_MARGIN_P)
+    if (Math.abs(to - p) < SETTLE_DEADBAND_P) return
+    const driverTop = driver.getBoundingClientRect().top + window.scrollY
+    const y = driverTop + g.heroBudgetPx + g.doorBudgetPx + g.dwellPx + to * g.narrBudgetPx
+    // Native smooth scroll, so a wheel or a swipe interrupts it the way it
+    // interrupts any other programmatic scroll — the reader always wins.
+    window.scrollTo({ top: Math.round(y), behavior: 'smooth' })
+    return
+  }
+}
+
+// Touch is the one input that can be mid-gesture while the page is perfectly
+// still, so the settle has to be told about the finger explicitly.
+function onSettleTouchStart() {
+  settleTouching = true
+  settleCancel()
+}
+function onSettleTouchEnd() {
+  settleTouching = false
+  settleSchedule()
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -740,14 +944,42 @@ function setupEducationPin(): (() => void) | null {
     readScroll()
     if (!raf) raf = requestAnimationFrame(write)
   }
+  // Coalesced to one frame: apply() walks the pinned subtree with
+  // getComputedStyle, and `resize` fires on every frame of a window drag (and
+  // on every URL-bar nudge on mobile). One measurement per frame is plenty.
+  let fitRaf = 0
   function onResize() {
-    fitPhoto()
-    onScroll()
+    if (fitRaf) return
+    fitRaf = requestAnimationFrame(() => { fitRaf = 0; apply() })
   }
 
+  // Education was the one pinned stage with no viewport gate at all — it staged
+  // on every phone, and the pin is `overflow: hidden` at one viewport tall, so
+  // a short screen simply swallowed whatever ran past the bottom. Measured, not
+  // guessed at with a breakpoint: 375x553 lost 154px (the entire records strip
+  // — CPI, Dean's List, Honour, Duration), 360x640 lost 95px, 844x390 lost
+  // 175px. The type scales down first; if even the floor can't buy the room,
+  // the section drops the pin and renders as ordinary flow, which shows all of
+  // the content and none of the choreography — the right trade on a phone.
+  const EDU_FIT_FLOOR = 0.7
+
   function apply() {
-    const on = !mqMotion.matches
-    sec!.classList.toggle('edu-staged', on)
+    const wanted = !mqMotion.matches
+    sec!.classList.toggle('edu-staged', wanted)
+    let on = wanted
+    if (wanted && pin) {
+      const { over } = fitPin(sec!, pin, '--edu-fit', EDU_FIT_FLOOR)
+      // Tolerance, not zero: sub-pixel residue and a stray rounding px are not
+      // worth throwing away the whole staged reveal, and a knife-edge test
+      // would let the stage flap in and out of the pin across a drag-resize.
+      if (over > PIN_GIVE_UP_PX) {
+        on = false
+        sec!.classList.remove('edu-staged')
+        sec!.style.removeProperty('--edu-fit')
+      }
+    } else {
+      sec!.style.removeProperty('--edu-fit')
+    }
     fitPhoto()
     if (on) {
       addEventListener('scroll', onScroll, { passive: true })
@@ -768,14 +1000,22 @@ function setupEducationPin(): (() => void) | null {
   addEventListener('resize', onResize, { passive: true })
   // The slot is bounded by where the display type ends, so it can only be
   // measured once the real face is swapped in for the fallback metrics.
-  document.fonts?.ready.then(onResize).catch(() => {})
+  //
+  // `alive` because this resolves on the font pipeline's schedule, not ours: a
+  // route change before the faces land would otherwise run apply() on a
+  // detached section AFTER teardown, re-attaching the scroll listener for good
+  // — a permanent handler measuring an element that is no longer in the page.
+  let alive = true
+  document.fonts?.ready.then(() => { if (alive) onResize() }).catch(() => {})
   apply()
   return () => {
+    alive = false
     mqMotion.removeEventListener?.('change', apply)
     removeEventListener('scroll', onScroll)
     removeEventListener('resize', onResize)
     measureRange?.detach()
     if (raf) cancelAnimationFrame(raf)
+    if (fitRaf) cancelAnimationFrame(fitRaf)
   }
 }
 
@@ -820,9 +1060,28 @@ function setupExperiencePin(): (() => void) | null {
     if (!raf) raf = requestAnimationFrame(write)
   }
 
+  // `innerHeight > 620` gates the pin, but clearing that bar is not the same
+  // as fitting inside it: at 1366x670 — the single most common laptop
+  // resolution — 78px of the stats panel rendered past the pin's
+  // `overflow: hidden` edge, so the last row of every role card was simply
+  // gone. The three panels are stacked in one grid cell, so the measurement
+  // below covers all of them at once and the scale that lands is the one the
+  // WORST panel needs; switching employers can't reveal a clip.
+  const XP_FIT_FLOOR = 0.72
+
+  const pin = sec.querySelector<HTMLElement>('.xp-pin')
+
   function apply() {
-    const on = !mqMotion.matches && innerWidth > 880 && innerHeight > 620
+    let on = !mqMotion.matches && innerWidth > 880 && innerHeight > 620
     sec!.classList.toggle('xp-staged', on)
+    if (on && pin) {
+      const { over } = fitPin(sec!, pin, '--xp-fit', XP_FIT_FLOOR)
+      if (over > PIN_GIVE_UP_PX) {
+        on = false
+        sec!.classList.remove('xp-staged')
+      }
+    }
+    if (!on) sec!.style.removeProperty('--xp-fit')
     if (on) {
       addEventListener('scroll', onScroll, { passive: true })
       onScroll()
@@ -833,14 +1092,30 @@ function setupExperiencePin(): (() => void) | null {
       panels.forEach((el) => el.classList.add('is-active'))
     }
   }
+  // Coalesced to one frame — apply() now measures the pinned subtree, and
+  // `resize` fires once per frame while a window is being dragged.
+  let fitRaf = 0
+  function onResize() {
+    if (fitRaf) return
+    fitRaf = requestAnimationFrame(() => { fitRaf = 0; apply() })
+  }
   mqMotion.addEventListener?.('change', apply)
-  addEventListener('resize', apply, { passive: true })
+  addEventListener('resize', onResize, { passive: true })
+  // The fit is a wrap measurement, and wrapping moves when the real face lands
+  // — Inter's fallback metrics under-count a line or two in the role panel.
+  // `alive` guards the same post-teardown re-attach described in the education
+  // pin above: apply() adds the scroll listener, so a late resolve after a
+  // route change leaks it permanently.
+  let alive = true
+  document.fonts?.ready.then(() => { if (alive) apply() }).catch(() => {})
   apply()
   return () => {
+    alive = false
     mqMotion.removeEventListener?.('change', apply)
-    removeEventListener('resize', apply)
+    removeEventListener('resize', onResize)
     removeEventListener('scroll', onScroll)
     if (raf) cancelAnimationFrame(raf)
+    if (fitRaf) cancelAnimationFrame(fitRaf)
   }
 }
 
@@ -945,11 +1220,17 @@ const summaryNear = ref(false)
 let remeasureSummary: (() => void) | null = null
 
 // Live character state, emitted by SummaryCharacter — drives button states.
-const charState = reactive({ ready: false, busy: false, pushing: false })
-function onCharState(s: { ready: boolean; busy: boolean; pushing: boolean }) {
+const charState = reactive({
+  ready: false,
+  busy: false,
+  pushing: false,
+  active: null as string | null,
+})
+function onCharState(s: { ready: boolean; busy: boolean; pushing: boolean; active: string | null }) {
   charState.ready = s.ready
   charState.busy = s.busy
   charState.pushing = s.pushing
+  charState.active = s.active
 }
 // The rig has measured its own reach — swap the fallback constants out for
 // the real numbers and re-place him against the text.
@@ -1087,6 +1368,35 @@ function setupSummaryStage(): (() => void) | null {
     return right === -Infinity ? body!.getBoundingClientRect().right : right
   }
 
+  /**
+   * Height of the copy itself, first child's top to last child's bottom.
+   *
+   * NOT `body.scrollHeight`, which is what the fit loop used to read and the
+   * reason --sum-fit never actually did anything: while staged, `.body` is a
+   * stretched grid item that centres its content, so its scroll height is its
+   * OWN height — always exactly the pin's available height, never the copy's.
+   * The old ratio step therefore multiplied by availH/need = 0.995 on every
+   * pass regardless of viewport and landed on 0.985 everywhere, while the real
+   * shrinking was done by a `max-height: 840px` media query that jumped the
+   * body from 17.6px to 14.9px in one step between a 15" laptop and a 13".
+   *
+   * offsetTop/offsetHeight, not rects: both are layout positions, so the
+   * scrub's live translate on `.body` and the sticky offset on `.section-num`
+   * are both invisible here, and the same measurement holds mid-push.
+   */
+  function copyH(): number {
+    let first: HTMLElement | null = null
+    let last: HTMLElement | null = null
+    for (let c = body!.firstElementChild; c; c = c.nextElementSibling) {
+      const el = c as HTMLElement
+      if (el.offsetParent === null && getComputedStyle(el).position !== 'fixed') continue
+      if (!first) first = el
+      last = el
+    }
+    if (!first || !last) return 0
+    return last.offsetTop + last.offsetHeight - first.offsetTop
+  }
+
   function measure() {
     // Rects include the live transforms — subtract what we applied to
     // recover layout positions, so mid-push resizes re-measure correctly.
@@ -1114,19 +1424,34 @@ function setupSummaryStage(): (() => void) | null {
     // the text column ended up, which is what actually decides how tall the
     // copy wraps. Result: the last paragraph fell out of the pin's
     // overflow:hidden box at 1440x900, and 1371x796 / 1512x860 / 1920x1080 all
-    // sat within 1px of doing the same. Three passes because scaling the type
-    // re-wraps it, so line count (and therefore height) moves in steps.
+    // sat within 1px of doing the same.
+    //
+    // BISECTION, not a proportional step. The old three-pass ratio assumed
+    // height falls in proportion to `fit`, which stopped being true once the
+    // fit also drives the leading and cancels the `ch`-relative measure cap:
+    // height now falls FASTER than fit, so a ratio step overshoots, and the
+    // loop only ever shrank — an overshoot could never be given back, leaving
+    // the copy a size or two smaller than the pin could actually hold. A
+    // bisection converges on the largest fit that still lands, from either
+    // side, in a fixed 7 reflows.
     const pinCS = getComputedStyle(pin!)
     const availH =
       pin!.clientHeight - parseFloat(pinCS.paddingTop) - parseFloat(pinCS.paddingBottom)
+    // 0.7 floor: past that the copy is unreadable and clipping is the lesser
+    // evil — but nothing we can render on a staged desktop gets near it.
+    const FIT_FLOOR = 0.7
     let fit = 1
     sec!.style.setProperty('--sum-fit', '1')
-    for (let i = 0; i < 3 && availH > 0; i++) {
-      const need = body!.scrollHeight
-      if (need <= availH) break
-      // 0.7 floor: past that the copy is unreadable and clipping is the lesser
-      // evil — but nothing we can render on a staged desktop gets near it.
-      fit = Math.max(0.7, (fit * availH * 0.995) / need)
+    if (availH > 0 && copyH() > availH) {
+      let lo = FIT_FLOOR
+      let hi = 1
+      for (let i = 0; i < 7; i++) {
+        const mid = (lo + hi) / 2
+        sec!.style.setProperty('--sum-fit', mid.toFixed(4))
+        if (copyH() <= availH) lo = mid
+        else hi = mid
+      }
+      fit = lo
       sec!.style.setProperty('--sum-fit', fit.toFixed(4))
     }
 
@@ -1207,6 +1532,24 @@ function setupSummaryStage(): (() => void) | null {
     if (!raf) raf = requestAnimationFrame(tick)
   }
 
+  /**
+   * Light the copy as one block while pinned.
+   *
+   * setupReveal() observes `#summary .body p` individually against a root
+   * inset 8% from the viewport bottom, and `.rv` parks each paragraph ~24px
+   * BELOW its layout position until it fires. In a flow section that always
+   * resolves — scroll further and the element climbs into range. In this pin
+   * it does not: the stage holds one screen and never advances past it, so a
+   * closing paragraph that lands near the floor sits in that dead band
+   * permanently, at opacity 0, on a stage where the fit measurement says it
+   * fits perfectly well. Reveal the block with the stage instead; the
+   * per-paragraph stagger still runs everywhere the section is in flow.
+   */
+  function revealCopy() {
+    if (!sumStaged.value) return
+    sec!.querySelectorAll('.body p.rv').forEach((p) => p.classList.add('rv-in'))
+  }
+
   // Entrance: fire his jump-in once the section scrolls into view. Trigger
   // is viewport-based (top crosses 65% of the viewport), not a ratio
   // threshold — the section is several viewports tall, so its max
@@ -1214,6 +1557,7 @@ function setupSummaryStage(): (() => void) | null {
   const io = new IntersectionObserver((entries) => {
     if (entries.some((e) => e.isIntersecting)) {
       if (!mqMotion.matches) summaryCharRef.value?.enter?.()
+      revealCopy()
       io.disconnect()
     }
   }, { rootMargin: '0px 0px -35% 0px' })
@@ -1243,6 +1587,10 @@ function setupSummaryStage(): (() => void) | null {
       // the choreography to get there.
       s = sTarget
       onScroll()
+      // Covers the enable-while-already-in-view case (a resize across the
+      // staging breakpoint), where the entrance observer has long since fired
+      // and disconnected.
+      if (sec!.getBoundingClientRect().top < innerHeight) revealCopy()
     } else {
       removeEventListener('scroll', onScroll)
       s = 0
@@ -1258,8 +1606,12 @@ function setupSummaryStage(): (() => void) | null {
   }
   // Anything that changes the layout or the rig's reported geometry after
   // setup re-runs the measurement through here.
+  // `alive`, not just `sumStaged`: sumStaged is a ref that outlives teardown,
+  // so a late font-swap resolve would measure a detached section and schedule
+  // a rAF against it.
+  let alive = true
   const remeasure = () => {
-    if (!sumStaged.value) return
+    if (!alive || !sumStaged.value) return
     measure()
     onScroll()
   }
@@ -1269,8 +1621,9 @@ function setupSummaryStage(): (() => void) | null {
   addEventListener('resize', apply, { passive: true })
   apply()
   // Web-font swap reflows the text column — re-measure once fonts settle.
-  document.fonts?.ready?.then(remeasure)
+  document.fonts?.ready?.then(remeasure).catch(() => {})
   return () => {
+    alive = false
     mqMotion.removeEventListener?.('change', apply)
     removeEventListener('resize', apply)
     removeEventListener('scroll', onScroll)
@@ -1370,19 +1723,42 @@ function setupPorRail(): (() => void) | null {
   const entries = Array.from(wrap.querySelectorAll<HTMLElement>('.entry'))
   const lis = Array.from(wrap.querySelectorAll<HTMLElement>('.bullets > li'))
 
+  // Node-dots resolved once — `li.querySelector('.nd')` inside the frame loop
+  // was a tree walk per bullet per frame, for the life of the rail.
+  const nds = lis.map((li) => li.querySelector('.nd'))
+  // Scratch arrays, reused every frame so the loop allocates nothing.
+  const entryTops: number[] = new Array(entries.length)
+  const liTops: number[] = new Array(lis.length)
+
   const frame = () => {
+    // ── READ phase ──────────────────────────────────────────────────────
+    // Every rect is taken BEFORE the first style write. Interleaving them
+    // (which this did) forces a synchronous layout per element per frame:
+    // the `tip.style.height` write dirties layout, and the very next
+    // getBoundingClientRect has to flush it — then each classList.toggle
+    // dirties it again for the following read. With this rail's entries and
+    // bullets that was dozens of forced reflows every frame while the
+    // section is on screen, which is the whole cost of the effect.
     const r = wrap.getBoundingClientRect()
     const t = motionOK
       ? Math.max(0, Math.min(r.height, window.innerHeight * 0.72 - r.top))
       : r.height
+    for (let i = 0; i < entries.length; i++) {
+      entryTops[i] = entries[i].getBoundingClientRect().top - r.top
+    }
+    for (let i = 0; i < lis.length; i++) {
+      liTops[i] = lis[i].getBoundingClientRect().top - r.top
+    }
+
+    // ── WRITE phase ─────────────────────────────────────────────────────
     tip.style.height = `${t}px`
 
-    entries.forEach((e) => {
-      e.classList.toggle('on', t >= e.getBoundingClientRect().top - r.top + 8)
+    entries.forEach((e, i) => {
+      e.classList.toggle('on', t >= entryTops[i] + 8)
     })
-    lis.forEach((li) => {
-      const nd = li.querySelector('.nd')
-      const y = li.getBoundingClientRect().top - r.top + 12
+    lis.forEach((li, i) => {
+      const nd = nds[i]
+      const y = liTops[i] + 12
       if (t >= y) {
         if (!li.classList.contains('on')) {
           li.classList.add('on')
@@ -1498,10 +1874,17 @@ onMounted(() => {
   const pinTop = () => window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
   requestAnimationFrame(pinTop)
   requestAnimationFrame(() => requestAnimationFrame(pinTop))
-  setTimeout(pinTop, 0)
-  setTimeout(pinTop, 60)
-  setTimeout(pinTop, 200)
+  // Tracked so teardown can cancel them: a route change inside the first 200ms
+  // (the nav is one click away and these are deliberately late) would otherwise
+  // fire pinTop against the page the user just navigated TO, yanking it to the
+  // top after it had already restored its own scroll position.
+  pinTopTimers = [
+    window.setTimeout(pinTop, 0),
+    window.setTimeout(pinTop, 60),
+    window.setTimeout(pinTop, 200),
+  ]
   if (document.readyState !== 'complete') {
+    pinTopLoadListener = pinTop
     window.addEventListener('load', pinTop, { once: true })
   }
   heroProgress = 0
@@ -1531,6 +1914,9 @@ onMounted(() => {
   // re-measure after layout settles (fonts, async components)
   requestAnimationFrame(() => requestAnimationFrame(measureHeroSlot))
   window.addEventListener('scroll', onHeroScroll, { passive: true })
+  window.addEventListener('touchstart', onSettleTouchStart, { passive: true })
+  window.addEventListener('touchend', onSettleTouchEnd, { passive: true })
+  window.addEventListener('touchcancel', onSettleTouchEnd, { passive: true })
   window.addEventListener('resize', measureHeroSlot)
   if (heroStickyRef.value) {
     heroResizeObs = new ResizeObserver(measureHeroSlot)
@@ -1652,6 +2038,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   finePointerMq?.removeEventListener?.('change', onFinePointer)
+  pinTopTimers.forEach((id) => clearTimeout(id))
+  pinTopTimers = []
+  if (pinTopLoadListener) window.removeEventListener('load', pinTopLoadListener)
+  pinTopLoadListener = null
   sectionCleanups.forEach((fn) => fn())
   sectionCleanups.length = 0
   scrollSpy?.disconnect()
@@ -1665,6 +2055,13 @@ onBeforeUnmount(() => {
   if (warmLoadListener) window.removeEventListener('load', warmLoadListener)
   warmLoadListener = null
   window.removeEventListener('scroll', onHeroScroll)
+  window.removeEventListener('touchstart', onSettleTouchStart)
+  window.removeEventListener('touchend', onSettleTouchEnd)
+  window.removeEventListener('touchcancel', onSettleTouchEnd)
+  settleCancel()
+  settleTouching = false
+  settleLastP = -1
+  settleDir = 1
   window.removeEventListener('resize', measureHeroSlot)
   window.removeEventListener('resize', syncTopbarH)
   heroResizeObs?.disconnect()
@@ -1714,6 +2111,7 @@ onBeforeUnmount(() => {
       <a href="#por" data-section="por"><span class="nav-num">04</span><span class="nav-label">Responsibility</span></a>
       <a href="#awards" data-section="awards"><span class="nav-num">05</span><span class="nav-label">Achievements</span></a>
       <a href="#skills" data-section="skills"><span class="nav-num">06</span><span class="nav-label">Skills</span></a>
+      <a href="#contact" data-section="contact"><span class="nav-num">07</span><span class="nav-label">Contact</span></a>
     </nav>
   </header>
 
@@ -1858,7 +2256,7 @@ onBeforeUnmount(() => {
              beneath it while the button holds position and brightness. -->
         <a
           class="hs-resume"
-          href="https://drive.google.com/file/d/1YwbA4hQ8tMp-VhoR3a5jC72Qx2hOLKUD/view?usp=sharing"
+          href="https://drive.google.com/file/d/1W8abM5sJ6BVXS1KqIZ5JRKKrd6G46_QR/view?usp=drive_link"
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -1911,9 +2309,9 @@ onBeforeUnmount(() => {
                read as decoration. A panel with a lime edge reads as something
                you operate. -->
           <div class="sum-act-panel">
-            <span class="sum-act-hint"><span class="sum-act-bar" aria-hidden="true"></span>Make him move — pick one</span>
+            <span class="sum-act-hint"><span class="sum-act-bar" aria-hidden="true"></span>Make him move — switch anytime</span>
             <div class="sum-act-row">
-              <button type="button" class="sum-act" style="--i: 0" :disabled="charState.busy || charState.pushing" @click="playCharAction('jump')">
+              <button type="button" class="sum-act" :class="{ 'is-active': charState.active === 'jump' }" :aria-pressed="charState.active === 'jump'" style="--i: 0" :disabled="charState.pushing" @click="playCharAction('jump')">
                 <span class="sum-act-btn">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M12 19V5" /><path d="m5 12 7-7 7 7" />
@@ -1921,7 +2319,7 @@ onBeforeUnmount(() => {
                 </span>
                 <span class="sum-act-label">Jump</span>
               </button>
-              <button type="button" class="sum-act" style="--i: 1" :disabled="charState.busy || charState.pushing" @click="playCharAction('back_flip')">
+              <button type="button" class="sum-act" :class="{ 'is-active': charState.active === 'back_flip' }" :aria-pressed="charState.active === 'back_flip'" style="--i: 1" :disabled="charState.pushing" @click="playCharAction('back_flip')">
                 <span class="sum-act-btn">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M3 12a9 9 0 1 1 3.6 7.2" /><path d="M3 22v-6h6" />
@@ -1929,7 +2327,7 @@ onBeforeUnmount(() => {
                 </span>
                 <span class="sum-act-label">Flip</span>
               </button>
-              <button type="button" class="sum-act" style="--i: 2" :disabled="charState.busy || charState.pushing" @click="playCharAction('dancing')">
+              <button type="button" class="sum-act" :class="{ 'is-active': charState.active === 'dancing' }" :aria-pressed="charState.active === 'dancing'" style="--i: 2" :disabled="charState.pushing" @click="playCharAction('dancing')">
                 <span class="sum-act-btn">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
@@ -1937,7 +2335,7 @@ onBeforeUnmount(() => {
                 </span>
                 <span class="sum-act-label">Dance</span>
               </button>
-              <button type="button" class="sum-act" style="--i: 3" :disabled="charState.busy || charState.pushing" @click="playCharAction('push_ups')">
+              <button type="button" class="sum-act" :class="{ 'is-active': charState.active === 'push_ups' }" :aria-pressed="charState.active === 'push_ups'" style="--i: 3" :disabled="charState.pushing" @click="playCharAction('push_ups')">
                 <span class="sum-act-btn">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M4 14h2l2-3 3 5 3-7 2 5h4" /><path d="M3 19h18" />
@@ -2253,6 +2651,7 @@ onBeforeUnmount(() => {
           <span class="skill-tag">Control-System Design</span>
           <span class="skill-tag">Reverse Engineering &amp; BOM Analysis</span>
           <span class="skill-tag">Hardware Sourcing &amp; Pre-Production</span>
+          <span class="skill-tag">Blender</span>
           <span class="skill-tag">MATLAB</span>
           <span class="skill-tag">Arduino</span>
           <span class="skill-tag">LT-Spice</span>
@@ -2298,8 +2697,11 @@ onBeforeUnmount(() => {
           <span class="skill-tag">Prompt Engineering</span>
           <span class="skill-tag">Claude</span>
           <span class="skill-tag">ChatGPT</span>
-          <span class="skill-tag">GitHub Copilot</span>
+          <span class="skill-tag">MCP connections</span>
           <span class="skill-tag">Cursor</span>
+          <span class="skill-tag">AI-Assisted Design</span>
+          <span class="skill-tag">AI-Assisted Web Development</span>
+          <span class="skill-tag">AI-Assisted 3D Modelling</span>
         </div>
       </div>
     </section>
@@ -2358,8 +2760,29 @@ onBeforeUnmount(() => {
   background: var(--accent);
 }
 .portfolio-topbar .nav a.is-active::after { display: none; }
+/* Seven links carry the index numerals to ~1010px of row: at 1240px the row
+   was already touching the brand lockup and by 1120px it ran 21px past the
+   right gutter — and the shared numerals-drop breakpoint in style.css doesn't
+   kick in until 1080. Drop them earlier for THIS nav only; the detail-route
+   topbar still carries five links and keeps its numerals down to 1080.
+   Bounded below at 721 so the phone sheet, which restores the numerals as
+   part of its stacked list, keeps them. */
+@media (min-width: 721px) and (max-width: 1300px) {
+  .portfolio-topbar .nav-num { display: none; }
+  .portfolio-topbar .nav { gap: 0.9rem; flex-wrap: wrap; justify-content: flex-end; }
+  .portfolio-topbar .nav-label { font-size: 0.7rem; letter-spacing: 0.1em; }
+}
+/* 721–900px: the brand lockup and seven links measure the full row within a
+   pixel or two, and the overflow lands as a single orphan — at 768 "Contact"
+   sat alone on a second line under the other six. Tighter gap and tracking
+   (type size unchanged) buy back the ~25px that keeps one row all the way
+   down to the sheet breakpoint. */
+@media (min-width: 721px) and (max-width: 900px) {
+  .portfolio-topbar .nav { gap: 0.5rem; }
+  .portfolio-topbar .nav-label { letter-spacing: 0.05em; }
+}
 @media (max-width: 720px) {
-  /* Six section links wrap to three rows at phone width, so below 720px the
+  /* Seven section links wrap to three rows at phone width, so below 720px the
      nav is presented as a sheet behind the .nav-toggle button (rules live in
      style.css, shared with the detail-route topbar). The scroll-spy underline
      is an absolutely-positioned ::before against a baseline row — in the
@@ -3103,6 +3526,25 @@ main > section.section {
   }
 }
 
+/* Measurement mode, held for one synchronous JS task by fitPin(). The pinned
+   stages author their entrance as `opacity: 0; transform: translateY(26px)`,
+   and a rect read through that transform counts the offset as content — so the
+   fit pass would shrink the type to clear a gap that disappears the moment the
+   entrance plays. Parked here rather than read back per element because the
+   transforms are spread across half a dozen rules and a reduced-motion block.
+   Nothing paints while this is on.
+
+   The list has to include every LINK in the chain, not just the leaves: a
+   translate on .xp-panels moves the .xp-panel inside it whether or not the
+   panel has a transform of its own, and missing that one node was worth a
+   phantom 26px — enough to un-pin Work Experience on a 2560 monitor. */
+.is-fitting :is(.edu-name-line, .edu-name-meta, .edu-detail, .edu-strip,
+                .section-num, .section-title, .xp-panels, .xp-panel,
+                .xp-panel > *, .xp-progress, .xp-companies, .xp-co) {
+  transform: none !important;
+  transition: none !important;
+}
+
 /* ─── summary — pinned character stage ───
    Staged (desktop, motion OK): section grows to 600vh (tall on purpose —
    the pin range IS the animation's scroll gain; shorter = the whole push
@@ -3129,12 +3571,20 @@ main > section.section {
      window from starving the text column. */
   --sum-char-col: min(82vh, 52vw);
 }
-#summary.sum-staged { height: 600vh; padding: 0; }
+#summary.sum-staged { height: 600vh; height: 600svh; padding: 0; }
 #summary .summary-pin { min-height: 0; }
 #summary.sum-staged .summary-pin {
   position: sticky;
   top: var(--topbar-h, 56px);
+  /* svh, not vh: on iOS/iPadOS Safari `100vh` is the LARGE viewport — the
+     height the page would have with the URL bar collapsed — so a pin sized
+     in vh is ~110px taller than what is actually on screen and its bottom
+     band (records strip, stats row, last bullets) lives permanently under
+     the browser chrome. svh is the stable small-viewport height, which is
+     also why it never resizes the stage mid-scroll as the bar retracts.
+     Plain-vh line kept first as the fallback for browsers without svh. */
   height: calc(100vh - var(--topbar-h, 56px));
+  height: calc(100svh - var(--topbar-h, 56px));
   padding: clamp(0.75rem, 2vh, 1.5rem) var(--gutter-x) clamp(0.5rem, 1.5vh, 1rem);
   overflow: hidden;
   display: flex;
@@ -3179,17 +3629,39 @@ main > section.section {
    Everything here is multiplied by --sum-fit, the measured fit-to-pin factor
    JS publishes (see measure()): the clamps set the intent, the multiplier
    guarantees the copy actually lands inside the overflow:hidden pin whatever
-   width the character column left for it. It is 1 whenever the copy fits. */
+   width the character column left for it. It is 1 whenever the copy fits.
+
+   The vw terms reach their rem ceiling at 1292px (title) and 1437px (body)
+   rather than 1400 / 1546. Every laptop from a 13" MacBook up therefore
+   renders the SAME nominal type as a 2560 monitor, and the only thing that
+   still separates them is --sum-fit — which is measured, so what it takes
+   away is exactly what the shorter pin could not hold. Both still cap at the
+   same rem, so nothing about a large display changes. */
 #summary.sum-staged .section-title {
-  font-size: calc(clamp(2.4rem, 4.8vw, 4.2rem) * var(--sum-fit, 1));
+  font-size: calc(clamp(2.4rem, 5.2vw, 4.2rem) * var(--sum-fit, 1));
   margin-bottom: calc(clamp(1rem, 2.6vh, 1.8rem) * var(--sum-fit, 1));
 }
 #summary.sum-staged .body p {
-  font-size: calc(clamp(1rem, 1.18vw, 1.14rem) * var(--sum-fit, 1));
+  font-size: calc(clamp(1rem, 1.27vw, 1.14rem) * var(--sum-fit, 1));
   margin-bottom: calc(1.15rem * var(--sum-fit, 1));
+  /* Leading tightens WITH the fit instead of stepping at a breakpoint: 1.62 at
+     fit 1, ~1.52 by fit 0.84 — the two values the old `max-height: 840px`
+     block jumped between, now traversed continuously. Reaching them by
+     measurement also means a viewport that needs no compression never gets
+     any, which the height proxy could not tell. */
+  line-height: calc(1.62 - (1 - var(--sum-fit, 1)) * 0.62);
+  /* Hold the MEASURE at its full-size physical width while the type shrinks.
+     `ch` is a font-relative unit, so a plain `58ch` narrows in lockstep with
+     --sum-fit: the copy gets smaller, the column gets proportionally
+     narrower, the line count barely moves, and the fit loop has to shrink
+     again to buy the height it just failed to save. Dividing by the fit
+     cancels that out — at 1440x790 the paragraphs then run 631px instead of
+     543px inside a 647px track that was sitting there unused. `min(…, 100%)`
+     keeps it inside the track when the track is the tighter of the two. */
+  max-width: min(calc(58ch / var(--sum-fit, 1)), 100%);
 }
 #summary .body p {
-  font: 400 clamp(1rem, 1.18vw, 1.14rem)/1.62 var(--f-sans);
+  font: 400 clamp(1rem, 1.27vw, 1.14rem)/1.62 var(--f-sans);
   color: var(--ink);
   max-width: 58ch;
   text-wrap: pretty;
@@ -3198,19 +3670,6 @@ main > section.section {
 #summary .body p:last-child { margin-bottom: 0; }
 #summary .body p strong { color: var(--ink); font-weight: 600; }
 #summary .body p em { font-style: normal; background: var(--accent); color: var(--accent-ink); padding: 0 0.16em; }
-/* Short pins start from a tighter scale so --sum-fit rarely has to do anything
-   visible — this is the pre-JS default, not the guarantee. */
-@media (max-height: 840px) {
-  #summary.sum-staged .section-title {
-    font-size: calc(clamp(2.1rem, 4.2vw, 3.4rem) * var(--sum-fit, 1));
-    margin-bottom: calc(1rem * var(--sum-fit, 1));
-  }
-  #summary.sum-staged .body p {
-    font-size: calc(clamp(0.92rem, 1.05vw, 1.02rem) * var(--sum-fit, 1));
-    line-height: 1.52;
-    margin-bottom: calc(0.85rem * var(--sum-fit, 1));
-  }
-}
 #summary .summary-char {
   height: min(72vh, 640px);
   min-height: 360px;
@@ -3380,6 +3839,15 @@ main > section.section {
 .sum-act:hover:not(:disabled) .sum-act-label { color: var(--ink); }
 .sum-act:active:not(:disabled) .sum-act-btn { transform: translateY(-1px) scale(0.96); }
 .sum-act:disabled { cursor: default; opacity: 0.35; }
+/* Currently playing. Filled instead of dimmed: the control stays live the
+   whole time a clip runs — clicking it again drops back to idle, and any
+   other button cuts straight over — so it has to read as pressed, not off. */
+.sum-act.is-active .sum-act-btn {
+  background: var(--ink);
+  color: var(--accent);
+  border-color: var(--ink);
+}
+.sum-act.is-active .sum-act-label { color: var(--ink); }
 
 /* One-time staggered ring pulse the moment the character goes live — the
    panel announces itself once, then holds still. */
@@ -3821,7 +4289,7 @@ main > section.section {
    Stage 1 · institute name slides in from the left, display-sized
    Stage 2 · degree, records strip, visuals rise in below
    ════════════════════════════════════════════════════════════ */
-#education.edu-staged { height: 240vh; padding: 0; min-height: 0; }
+#education.edu-staged { height: 240vh; height: 240svh; padding: 0; min-height: 0; }
 /* `relative` only so the campus photo has a containing block to be parked in
    — no offsets, so nothing in the flex column moves. */
 #education .edu-pin { display: flex; flex-direction: column; min-height: 0; position: relative; }
@@ -3830,7 +4298,15 @@ main > section.section {
   /* pin BELOW the sticky topbar (not behind it) so the heading keeps
      a comfortable gap from the bar while pinned */
   top: var(--topbar-h, 56px);
+  /* svh, not vh: on iOS/iPadOS Safari `100vh` is the LARGE viewport — the
+     height the page would have with the URL bar collapsed — so a pin sized
+     in vh is ~110px taller than what is actually on screen and its bottom
+     band (records strip, stats row, last bullets) lives permanently under
+     the browser chrome. svh is the stable small-viewport height, which is
+     also why it never resizes the stage mid-scroll as the bar retracts.
+     Plain-vh line kept first as the fallback for browsers without svh. */
   height: calc(100vh - var(--topbar-h, 56px));
+  height: calc(100svh - var(--topbar-h, 56px));
   padding: clamp(1.5rem, 4vh, 2.75rem) var(--gutter-x) clamp(1rem, 3.5vh, 2.5rem);
   overflow: hidden;
 }
@@ -3870,17 +4346,61 @@ main > section.section {
   letter-spacing: 0.24em;
   padding: 0.55em 0.5em 0.55em 0.8em;
 }
+/* Both of these were authored as flat px out of the design handoff — 28px and
+   20px, identical on a 2560 monitor and on a 375px phone. On the phone the
+   degree line wrapped to four lines and pushed the records strip clean out of
+   the pin. The clamps below top out at exactly the handoff values and only
+   start giving ground under ~715px / ~840px of viewport width, so every
+   desktop size renders byte-for-byte what it rendered before. Line-height is
+   unitless now (28/32.45 = 1.159) so it tracks the font-size instead of
+   staying frozen at 32.45px when --edu-fit scales the type down. */
 #education .edu-degree {
-  font: 700 28px/32.45px var(--f-sans);
+  font: 700 clamp(1.25rem, 2.6vw + 0.6rem, 1.75rem)/1.159 var(--f-sans);
   letter-spacing: 0;
   color: #09090B;
   margin-top: clamp(0.9rem, 2.5vh, 1.5rem);
 }
 #education .edu-gold {
   color: var(--ink);
-  font-size: 20px;
+  font-size: clamp(1rem, 1.6vw + 0.4rem, 1.25rem);
 }
-#education .edu-gold strong { font-weight: 700; font-size: 20px; }
+#education .edu-gold strong { font-weight: 700; font-size: inherit; }
+
+/* ── measured fit-to-pin ──
+   `--edu-fit` is published by setupEducationPin → fitPin(); it is 1 whenever
+   the stack already clears the pin's bottom edge, which is every desktop
+   viewport, so nothing below changes on a large display. On the short ones it
+   is the only thing standing between the records strip and the
+   `overflow: hidden` edge. Every term that contributes HEIGHT is multiplied —
+   type, leading-bearing margins, and the strip's own box padding — because
+   scaling the type alone leaves the fixed 1.1rem cell padding as a floor the
+   content can't get under. */
+#education.edu-staged .section-title {
+  font-size: calc(clamp(2.4rem, 6vw, 5.2rem) * var(--edu-fit, 1));
+  margin-bottom: calc(var(--gap-title) * var(--edu-fit, 1));
+}
+#education.edu-staged .edu-name {
+  margin-bottom: calc(clamp(1rem, 3.5vh, 2.5rem) * var(--edu-fit, 1));
+}
+#education.edu-staged .edu-name-line {
+  font-size: calc(clamp(1.3rem, min(3.9vw, 5.4vh), 3.8rem) * var(--edu-fit, 1));
+}
+#education.edu-staged .edu-name-meta {
+  margin-top: calc(clamp(0.6rem, 2vh, 1.1rem) * var(--edu-fit, 1));
+}
+#education.edu-staged .edu-degree {
+  font-size: calc(clamp(1.25rem, 2.6vw + 0.6rem, 1.75rem) * var(--edu-fit, 1));
+  margin-top: calc(clamp(0.9rem, 2.5vh, 1.5rem) * var(--edu-fit, 1));
+}
+#education.edu-staged .edu-gold {
+  font-size: calc(clamp(1rem, 1.6vw + 0.4rem, 1.25rem) * var(--edu-fit, 1));
+}
+#education.edu-staged .edu-strip { margin-top: calc(1.5rem * var(--edu-fit, 1)); }
+#education.edu-staged .edu-strip .cell {
+  padding: calc(1.1rem * var(--edu-fit, 1)) calc(1.2rem * var(--edu-fit, 1));
+  gap: calc(0.4rem * var(--edu-fit, 1));
+}
+#education.edu-staged .edu-strip .v { font-size: calc(1.05rem * var(--edu-fit, 1)); }
 
 #education .edu-details {
   display: grid;
@@ -3953,7 +4473,7 @@ main > section.section {
    Fallback (small screens / reduced motion): stacked entries with
    every company name highlighted.
    ════════════════════════════════════════════════════════════ */
-#experience.xp-staged { height: 320vh; padding: 0; min-height: 0; }
+#experience.xp-staged { height: 320vh; height: 320svh; padding: 0; min-height: 0; }
 #experience .xp-pin {
   display: flex;
   flex-direction: column;
@@ -3963,9 +4483,57 @@ main > section.section {
 #experience.xp-staged .xp-pin {
   position: sticky;
   top: var(--topbar-h, 56px);
+  /* svh, not vh: on iOS/iPadOS Safari `100vh` is the LARGE viewport — the
+     height the page would have with the URL bar collapsed — so a pin sized
+     in vh is ~110px taller than what is actually on screen and its bottom
+     band (records strip, stats row, last bullets) lives permanently under
+     the browser chrome. svh is the stable small-viewport height, which is
+     also why it never resizes the stage mid-scroll as the bar retracts.
+     Plain-vh line kept first as the fallback for browsers without svh. */
   height: calc(100vh - var(--topbar-h, 56px));
+  height: calc(100svh - var(--topbar-h, 56px));
   padding: clamp(1.5rem, 4vh, 2.75rem) var(--gutter-x) clamp(1rem, 3.5vh, 2.5rem);
   overflow: hidden;
+}
+
+/* ── measured fit-to-pin ──
+   `--xp-fit` is published by setupExperiencePin → fitPin(); 1 on every
+   viewport where the stack already clears the pin, so nothing on a large
+   display moves. On a 1366x670 laptop it is what keeps the stats row inside
+   the `overflow: hidden` edge instead of 78px past it. The section heading
+   is scaled along with the panel because at 6vw it is two lines of ~82px
+   type — a quarter of the whole pin — and shaving the card alone would make
+   the card carry the entire correction. */
+#experience.xp-staged .section-title {
+  font-size: calc(clamp(2.4rem, 6vw, 5.2rem) * var(--xp-fit, 1));
+  margin-bottom: calc(var(--gap-title) * var(--xp-fit, 1));
+}
+#experience.xp-staged .xp-pin { gap: calc(clamp(1.25rem, 3vh, 2rem) * var(--xp-fit, 1)); }
+#experience.xp-staged .xp-co-name {
+  font-size: calc(clamp(1.8rem, min(4.4vw, 6.8vh), 4.6rem) * var(--xp-fit, 1));
+}
+#experience.xp-staged .xp-companies { gap: calc(clamp(1rem, 3.2vh, 2rem) * var(--xp-fit, 1)); }
+#experience.xp-staged .xp-panel {
+  gap: calc(clamp(0.85rem, 2vh, 1.2rem) * var(--xp-fit, 1));
+  padding: calc(clamp(1.3rem, 2.4vh, 1.9rem) * var(--xp-fit, 1))
+           calc(clamp(1.3rem, 1.8vw, 1.9rem) * var(--xp-fit, 1));
+}
+#experience.xp-staged .xp-role {
+  font-size: calc(clamp(1.2rem, min(1.9vw, 2.8vh), 1.55rem) * var(--xp-fit, 1));
+}
+#experience.xp-staged .xp-summary {
+  font-size: calc(clamp(0.92rem, 1.05vw, 1rem) * var(--xp-fit, 1));
+}
+#experience.xp-staged .xp-datelines {
+  padding: calc(clamp(0.6rem, 1.6vh, 0.85rem) * var(--xp-fit, 1)) 0;
+  gap: calc(0.55rem * var(--xp-fit, 1));
+}
+#experience.xp-staged .xp-stats .cell {
+  padding: calc(clamp(0.75rem, 1.8vh, 1.05rem) * var(--xp-fit, 1)) calc(1.1rem * var(--xp-fit, 1));
+  gap: calc(0.45rem * var(--xp-fit, 1));
+}
+#experience.xp-staged .xp-stats .v {
+  font-size: calc(clamp(1rem, min(1.4vw, 2.4vh), 1.15rem) * var(--xp-fit, 1));
 }
 
 /* header row — title left, scrub progress right */
@@ -4335,12 +4903,20 @@ main > section.section {
    each recognition row (tracing-beam / spotlight treatments adapted
    from 21st.dev to the blueprint design language).
    ════════════════════════════════════════════════════════════ */
-#awards.aw-staged { height: 280vh; padding: 0; }
+#awards.aw-staged { height: 280vh; height: 280svh; padding: 0; }
 #awards .aw-stick { display: flex; flex-direction: column; min-height: 0; }
 #awards.aw-staged .aw-stick {
   position: sticky;
   top: var(--topbar-h, 56px);
+  /* svh, not vh: on iOS/iPadOS Safari `100vh` is the LARGE viewport — the
+     height the page would have with the URL bar collapsed — so a pin sized
+     in vh is ~110px taller than what is actually on screen and its bottom
+     band (records strip, stats row, last bullets) lives permanently under
+     the browser chrome. svh is the stable small-viewport height, which is
+     also why it never resizes the stage mid-scroll as the bar retracts.
+     Plain-vh line kept first as the fallback for browsers without svh. */
   height: calc(100vh - var(--topbar-h, 56px));
+  height: calc(100svh - var(--topbar-h, 56px));
   padding: clamp(1.25rem, 3.5vh, 2.5rem) var(--gutter-x) clamp(1rem, 3vh, 2rem);
   justify-content: center;
   overflow: hidden;

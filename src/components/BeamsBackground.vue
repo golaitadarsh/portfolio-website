@@ -106,12 +106,29 @@ onMounted(() => {
   const parent = canvas.parentElement
   if (!parent) return
 
+  // Last applied backing-store size. Rebuilding the beam field is expensive —
+  // 30 fresh offscreen canvases, each filled through a 35px Gaussian — and it
+  // also visibly restarts the field. It must happen only when the size really
+  // changed, not on every event that merely *might* mean a resize.
+  let lastW = -1
+  let lastH = -1
+
   const updateCanvasSize = () => {
-    const dpr = window.devicePixelRatio || 1
+    // Capped at 2 like every other canvas on the site. This one was the sole
+    // exception, and it is the most expensive surface here: a full-viewport
+    // 2D canvas under a 52px blur. At DPR 3 the uncapped backing store cost
+    // 2.25× the fill of DPR 2 for sharpness no eye can resolve through that
+    // much blur.
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
     const w = parent.clientWidth || window.innerWidth
     const h = parent.clientHeight || window.innerHeight
-    canvas.width = w * dpr
-    canvas.height = h * dpr
+    const bw = Math.round(w * dpr)
+    const bh = Math.round(h * dpr)
+    if (bw === lastW && bh === lastH) return
+    lastW = bw
+    lastH = bh
+    canvas.width = bw
+    canvas.height = bh
     canvas.style.width = `${w}px`
     canvas.style.height = `${h}px`
     ctx.setTransform(1, 0, 0, 1, 0, 0)
@@ -122,9 +139,12 @@ onMounted(() => {
   }
 
   updateCanvasSize()
+  // ResizeObserver on the parent already fires for window resizes (the parent
+  // is viewport-sized), so the extra window listener only ever duplicated the
+  // work — two full field rebuilds per resize frame while a window is dragged,
+  // and on every URL-bar nudge on mobile.
   const ro = new ResizeObserver(updateCanvasSize)
   ro.observe(parent)
-  window.addEventListener('resize', updateCanvasSize)
 
   function resetBeam(beam: Beam, index: number, totalBeams: number) {
     if (!canvas) return beam
@@ -200,9 +220,11 @@ onMounted(() => {
   onBeforeUnmount(() => {
     ro.disconnect()
     visObs.disconnect()
-    window.removeEventListener('resize', updateCanvasSize)
     if (rafId) cancelAnimationFrame(rafId)
     rafId = 0
+    // Offscreen sprite canvases hold a backing store each — drop the refs so
+    // they are collectable immediately rather than at the whim of the closure.
+    beams = []
   })
 })
 </script>

@@ -25,7 +25,9 @@ const props = withDefaults(defineProps<Props>(), {
 const container = ref<HTMLElement | null>(null)
 
 let renderer: THREE.WebGLRenderer
-let animId: number
+// 0 = loop parked (see the viewport gate in frame()), never a live handle:
+// rAF ids are always >= 1.
+let animId = 0
 
 onMounted(() => {
   if (!container.value) return
@@ -144,11 +146,28 @@ onMounted(() => {
   // Cursor in CSS pixel space, top-left origin — matches gl_FragCoord remapping
   const mouse  = { x: -9999, y: -9999, active: false }
   const smooth = { x: -9999, y: -9999 }
+  // Latest raw viewport coords. The pointer handlers record ONLY these; the
+  // conversion to element-local space (which needs a rect) is deferred to the
+  // frame. getBoundingClientRect in a window-level mousemove handler forces a
+  // synchronous layout on every pointer event — at a high-polling-rate mouse
+  // that is hundreds of layout flushes per second, for the whole session,
+  // including long after this canvas has scrolled away.
+  let rawX = -9999
+  let rawY = -9999
+  let rawDirty = false
 
   function setMouse(clientX: number, clientY: number) {
+    rawX = clientX
+    rawY = clientY
+    rawDirty = true
+  }
+  // Runs inside the frame, where layout is already settled for this tick.
+  function flushMouse() {
+    if (!rawDirty) return
+    rawDirty = false
     const r = el.getBoundingClientRect()
-    const nx = clientX - r.left
-    const ny = clientY - r.top
+    const nx = rawX - r.left
+    const ny = rawY - r.top
     if (!mouse.active) {
       smooth.x = nx
       smooth.y = ny
@@ -159,6 +178,7 @@ onMounted(() => {
   }
   function onMove(e: MouseEvent) { setMouse(e.clientX, e.clientY) }
   function onLeave() {
+    rawDirty = false
     mouse.x = -9999
     mouse.y = -9999
     mouse.active = false
@@ -195,11 +215,37 @@ onMounted(() => {
   // the session re-renders a full-screen shader nobody can see. The
   // computed-style read is done on a coarse cadence; pending dirtiness is
   // kept (not consumed) while occluded so the first visible frame is fresh.
+  //
+  // Viewport gate: the opacity check above stops the RENDER, but the rAF tick
+  // itself used to keep running for the life of the page — including a
+  // getComputedStyle (a style-recalc flush) every 15 frames, forever, on a
+  // canvas that is thousands of px above the viewport. The hero scrolls away
+  // permanently, so the loop is cancelled outright once the element leaves and
+  // re-armed by the observer if it ever comes back.
   let needsRender = true
   let paintVisible = true
   let visCheck = 0
+  let onScreen = true
+  const visObs = new IntersectionObserver((entries) => {
+    const vis = entries.some((e) => e.isIntersecting)
+    if (vis === onScreen) return
+    onScreen = vis
+    if (vis && animId === 0) {
+      // Re-entering: the cursor may have moved anywhere while we slept, and
+      // the smoothing must not sweep a visible trail from a stale position.
+      needsRender = true
+      animId = requestAnimationFrame(frame)
+    }
+  })
+  visObs.observe(el)
+
   function frame() {
+    if (!onScreen) {
+      animId = 0
+      return
+    }
     animId = requestAnimationFrame(frame)
+    flushMouse()
     if (++visCheck >= 15) {
       visCheck = 0
       paintVisible = +getComputedStyle(el).opacity > 0.01
@@ -224,6 +270,8 @@ onMounted(() => {
 
   onUnmounted(() => {
     cancelAnimationFrame(animId)
+    animId = 0
+    visObs.disconnect()
     window.removeEventListener('mousemove', onMove)
     document.removeEventListener('mouseout', onDocMouseOut)
     window.removeEventListener('touchmove', onTouch)
@@ -231,6 +279,11 @@ onMounted(() => {
     geom.dispose()
     mat.dispose()
     renderer.dispose()
+    // dispose() frees three's own GPU objects but leaves the WebGL context
+    // itself alive. Browsers cap concurrent contexts (Chrome: 16) and evict
+    // the OLDEST when the cap is hit — so route round-trips through this page
+    // would silently blank an earlier canvas. Release it explicitly.
+    renderer.forceContextLoss()
   })
 })
 </script>

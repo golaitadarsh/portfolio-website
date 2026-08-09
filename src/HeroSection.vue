@@ -40,7 +40,8 @@ const LAYERED_ASP = 1512 / 1040
 const SIM_RES = 128
 
 let renderer: THREE.WebGLRenderer
-let animId: number
+// 0 = loop parked (see the viewport gate in animate()); rAF ids are always >= 1.
+let animId = 0
 
 const mouse     = { x: 0.5, y: 0.5 }
 const prevMouse = { x: 0.5, y: 0.5 }
@@ -367,6 +368,9 @@ onMounted(() => {
   let phantomGlowMs = 0
 
   function startPhantom() {
+    // The pending handle has been consumed — clear it before any of the
+    // re-schedule paths below, so "is a phantom already queued?" stays honest.
+    phantomTimer = null
     if (mouseOnScreen) { scheduleNextPhantom(); return }
     // Only fire phantom splashes while hero is the active foreground (page-1).
     // Once the page is scrolled, the Page-1 element is mid-zoom or landed in
@@ -391,8 +395,18 @@ onMounted(() => {
     phantomGlowMs = 900
   }
 
+  // Hoisted: this scheduler re-arms itself for the life of the page (every
+  // 30–3000ms), and window.matchMedia allocates a fresh MediaQueryList on
+  // every call — thousands of throwaway objects per session for a preference
+  // that is queried once and then live-tracked by the MQL itself.
+  const phantomReduced = window.matchMedia('(prefers-reduced-motion: reduce)')
+
   function scheduleNextPhantom() {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (phantomReduced.matches) return
+    // Nothing to reveal while the loop is parked — the chain restarts with the
+    // loop (see the viewport gate below), so an off-screen hero stops waking
+    // the main thread up to 30×/sec for the rest of the session.
+    if (!heroOnScreen) return
     const delay = 30 + Math.random() * (3000 - 30)
     phantomTimer = setTimeout(startPhantom, delay)
   }
@@ -407,7 +421,39 @@ onMounted(() => {
   const QUIET_FRAMES_BEFORE_SLEEP = 240
   let quietFrames = 0
   let last = performance.now()
+
+  // Hard viewport gate, above the quiet-frame gate. The quiet gate only skips
+  // the sim+render — the tick itself kept re-arming forever, reading
+  // window.scrollY (which flushes pending layout) once per frame for the whole
+  // session, on a hero that scrolls permanently out of view within one screen.
+  // The observer re-arms the loop if the user scrolls back up.
+  let heroOnScreen = true
+  const heroVisObs = new IntersectionObserver((entries) => {
+    const vis = entries.some((e) => e.isIntersecting)
+    if (vis === heroOnScreen) return
+    heroOnScreen = vis
+    if (vis) {
+      if (animId === 0) {
+        // Swallow the sleep gap so dt on the first waking frame is one frame,
+        // not however long the user spent down the page.
+        last = performance.now()
+        quietFrames = 0
+        animId = requestAnimationFrame(animate)
+      }
+      // The phantom chain declines to re-arm while parked — restart it.
+      if (phantomTimer === null && !phantomActive) scheduleNextPhantom()
+    } else if (phantomTimer !== null) {
+      clearTimeout(phantomTimer)
+      phantomTimer = null
+    }
+  })
+  heroVisObs.observe(el)
+
   function animate() {
+    if (!heroOnScreen) {
+      animId = 0
+      return
+    }
     animId = requestAnimationFrame(animate)
     const now = performance.now()
     const dt  = Math.min((now - last) / 1000, 0.05)
@@ -642,7 +688,10 @@ onMounted(() => {
 
   onUnmounted(() => {
     cancelAnimationFrame(animId)
+    animId = 0
+    heroVisObs.disconnect()
     if (phantomTimer !== null) clearTimeout(phantomTimer)
+    phantomTimer = null
     phantomActive = false
     el.removeEventListener('mousemove',  onMouseMove)
     el.removeEventListener('mouseleave', onMouseLeave)
@@ -650,6 +699,10 @@ onMounted(() => {
     window.removeEventListener('resize', onResize)
     velA.dispose(); velB.dispose(); dyeA.dispose(); dyeB.dispose()
     renderer.dispose()
+    // dispose() frees three's GPU objects but keeps the WebGL context alive.
+    // Browsers cap concurrent contexts and evict the oldest past the cap, so
+    // an uncollected context here blanks another canvas on a later route.
+    renderer.forceContextLoss()
     ;[tBase, tLayered].forEach(t => t.dispose())
     ;[velSplatMat, dyeSplatMat, velAdvMat, dyeAdvMat, displayMat].forEach(m => m.dispose())
     displayGeo.dispose(); quadGeo.dispose()

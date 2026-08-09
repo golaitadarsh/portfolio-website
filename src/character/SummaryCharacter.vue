@@ -37,7 +37,13 @@ const props = withDefaults(defineProps<Props>(), { paused: false, showActions: t
 
 const emit = defineEmits<{
   (e: "loaded"): void;
-  (e: "state", s: { ready: boolean; busy: boolean; pushing: boolean }): void;
+  (e: "state", s: {
+    ready: boolean;
+    busy: boolean;
+    pushing: boolean;
+    /** Clip currently playing as a one-shot, or null while idling. */
+    active: string | null;
+  }): void;
   /** Rig geometry became available — the parent should re-measure. */
   (e: "metrics"): void;
 }>();
@@ -67,6 +73,10 @@ const canvasDiv = ref<HTMLDivElement | null>(null);
 const ready = ref(false);
 const busy = ref(false);
 const pushing = ref(false);
+// Which one-shot is on screen right now. Drives the button's pressed look —
+// the buttons stay live while a clip runs (see playOnce), so "playing" has to
+// be shown rather than enforced by disabling.
+const active = ref<ClipName | null>(null);
 
 const ACTIONS: { key: ClipName; label: string }[] = [
   { key: "jump", label: "Jump" },
@@ -102,7 +112,12 @@ defineExpose({
 
 // Mirror live state to the parent (drives its external action buttons).
 watchEffect(() => {
-  emit("state", { ready: ready.value, busy: busy.value, pushing: pushing.value });
+  emit("state", {
+    ready: ready.value,
+    busy: busy.value,
+    pushing: pushing.value,
+    active: active.value,
+  });
 });
 
 function stripTracks(clip: THREE.AnimationClip, boneNames: string[]) {
@@ -216,15 +231,33 @@ onMounted(() => {
     if (!idleAction) return;
     headFollow = true;
     busy.value = false;
+    active.value = null;
+    playSeq++; // cancel any clip still streaming in
     crossfadeTo(idleAction, dur);
   }
 
+  // Bumped on every play/cancel request. A clip fetch is async, so a click
+  // that lands mid-fetch has to be able to invalidate the earlier one —
+  // otherwise the slower load wins and the character plays the wrong thing.
+  let playSeq = 0;
+
+  // Nothing here blocks: a running clip is never a reason to ignore a click.
+  // Another action interrupts on the spot, and the same action again drops
+  // back to idle, so the viewer is never held hostage by a long clip.
   async function playOnce(name: ClipName) {
-    if (!mixer || busy.value) return;
+    if (!mixer || pushing.value) return;
+    if (active.value === name) {
+      backToIdle(0.3);
+      return;
+    }
+    const seq = ++playSeq;
     busy.value = true;
+    active.value = name;
     const clip = await loadClip(name);
+    if (seq !== playSeq) return; // superseded while the clip streamed in
     if (!clip || !mixer) {
       busy.value = false;
+      active.value = null;
       return;
     }
     headFollow = false;
@@ -273,6 +306,8 @@ onMounted(() => {
       if (!clip || !mixer || !pushing.value) return;
       headFollow = false;
       busy.value = false;
+      active.value = null;
+      playSeq++; // scroll owns the rig now — drop any in-flight one-shot
       const action = mixer.clipAction(clip);
       action.setLoop(THREE.LoopRepeat, Infinity);
       // timeScale stays 0 for the clip's whole life — animate() scrubs the
@@ -442,9 +477,11 @@ onMounted(() => {
     charRoot = char;
     mixer = new THREE.AnimationMixer(char);
     mixer.addEventListener("finished", (e: any) => {
-      // Every one-shot lands back on idle — unless the push loop has
-      // taken over in the meantime.
-      if (e.action !== idleAction && !pushing.value) backToIdle();
+      // Every one-shot lands back on idle — unless the push loop has taken
+      // over, or it is an interrupted clip finishing out at zero weight
+      // (fadeOut leaves it playing) and would yank the new one off screen.
+      if (e.action === idleAction || e.action !== currentAction) return;
+      if (!pushing.value) backToIdle();
     });
 
     const idleClip = await loadClip("waiting");
@@ -565,6 +602,10 @@ onMounted(() => {
     });
     scene.clear();
     renderer.dispose();
+    // dispose() releases three's GPU objects but not the WebGL context itself
+    // — see the same note in HeroCharacter.vue. Contexts are a capped global
+    // resource; leaking them blanks a canvas elsewhere on the page.
+    renderer.forceContextLoss();
     if (renderer.domElement.parentNode === container) {
       container.removeChild(renderer.domElement);
     }
@@ -594,7 +635,9 @@ onBeforeUnmount(() => {
         :key="a.key"
         type="button"
         class="sc-btn"
-        :disabled="busy || pushing"
+        :class="{ 'is-active': active === a.key }"
+        :aria-pressed="active === a.key"
+        :title="active === a.key ? `Stop ${a.label}` : a.label"
         @click="actionHandler(a.key)"
       >{{ a.label }}</button>
     </div>
@@ -658,4 +701,10 @@ onBeforeUnmount(() => {
 }
 .sc-btn:active:not(:disabled) { transform: translateY(0); }
 .sc-btn:disabled { opacity: 0.4; cursor: default; }
+/* Playing right now — filled, not dimmed. Still clickable (click = stop). */
+.sc-btn.is-active {
+  background: var(--ink, #111);
+  color: var(--accent, #d9f24f);
+  border-color: var(--ink, #111);
+}
 </style>

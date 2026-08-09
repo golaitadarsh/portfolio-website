@@ -272,6 +272,12 @@ onMounted(() => {
     });
     scene.clear();
     renderer.dispose();
+    // dispose() releases three's GPU objects but not the WebGL context itself.
+    // This page holds three contexts at once (hero rig, summary rig, fluid
+    // trail) and browsers cap the total (Chrome: 16), evicting the OLDEST past
+    // the cap — so contexts leaked across route round-trips blank a canvas
+    // that is still on screen. Release it explicitly.
+    renderer.forceContextLoss();
     if (renderer.domElement.parentNode === container) {
       container.removeChild(renderer.domElement);
     }

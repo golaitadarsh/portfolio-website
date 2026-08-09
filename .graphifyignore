@@ -1,0 +1,7 @@
+# graphify's own output - never feed the graph its own vault
+graphify-out
+graphify-out/*
+.obsidian
+.code-review-graph
+.vercel
+.gstack
