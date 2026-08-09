@@ -1808,7 +1808,7 @@ onBeforeUnmount(() => {
       <footer class="im-foot">
         <p class="caption">
           <strong>Mechanical engineer.</strong> Operations &amp; program build, hands-on.<br />
-          Mumbai · open to product-ops at hardware-first companies.
+          Mumbai · open to business operations &amp; strategy on the supplier side of a hardware ecosystem.
         </p>
         <a href="#summary" class="scroll-down" aria-label="Scroll to the next section">
           <span>Keep scrolling</span>
@@ -2307,7 +2307,7 @@ onBeforeUnmount(() => {
 
   <footer id="contact" class="footer">
     <div class="footer-grid">
-      <h2>Open to <em>Business operations</em> at hardware-first companies.</h2>
+      <h2>Open to <em>Business Operations &amp; Strategy</em> on the supplier side of a Hardware ecosystem.</h2>
       <div class="links">
         <a href="mailto:golaitadarsh@gmail.com">
           <span class="k">Email</span>
