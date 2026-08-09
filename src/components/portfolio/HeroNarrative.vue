@@ -371,7 +371,8 @@ defineExpose({ publish, reset, handoverBands })
       <div class="cr-meta-stack">
         <p class="cr-hint">
           <span class="cr-hint-arrow" aria-hidden="true">→</span>
-          <span class="cr-hint-label">Try moving your cursor</span>
+          <span class="cr-hint-label cr-hint-label--fine">Try moving your cursor</span>
+          <span class="cr-hint-label cr-hint-label--coarse">Drag to make him look</span>
           <span class="cr-hint-dot" aria-hidden="true"></span>
         </p>
         <p class="cr-meta">Scroll to enter the work →</p>
@@ -736,6 +737,13 @@ defineExpose({ publish, reset, handoverBands })
 }
 .cr-hint-arrow { opacity: 0.9; }
 .cr-hint-label { animation: cr-hint-pulse 2.4s ease-in-out infinite; }
+/* Touch devices have no cursor, but the character does track touchmove — so
+   the hint names the gesture that actually exists on the device in hand. */
+.cr-hint-label--coarse { display: none; }
+@media (pointer: coarse) {
+  .cr-hint-label--fine { display: none; }
+  .cr-hint-label--coarse { display: inline; }
+}
 .cr-hint-dot {
   width: 0.5em;
   height: 0.5em;

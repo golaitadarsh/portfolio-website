@@ -1079,13 +1079,24 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
   position: relative;
   display: grid;
   place-items: center;
+  /* The viz row is the card's 1fr. Without min-height:0 the row floors at the
+     square viz's content size, which pushed the sub + chips past the bottom of
+     a ratio-sized card — clipped by overflow:hidden, so the chips just vanished
+     (1024x768 lost 128px of card). Zero here lets the row take what's left
+     after the header and foot, and the viz below sizes itself to that. */
+  min-height: 0;
 }
 .cs-metric-viz > * { grid-area: 1 / 1; place-self: center; }
 .cs-metric-viz .big { position: relative; z-index: 2; font-size: clamp(2.2rem, 4vw, 3.2rem); }
 .cs-viz {
   position: relative;
   z-index: 0;
-  width: min(112%, 280px);
+  /* Height-driven: the square is whatever the leftover row gives it, so the
+     diagram shrinks instead of the chips disappearing. max-width is a guard
+     for cards short enough that the row is taller than the card is wide. */
+  height: 100%;
+  width: auto;
+  max-width: min(112%, 280px);
   aspect-ratio: 1;
   justify-self: center;
   align-self: center;
@@ -1324,8 +1335,21 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
    the card has to give ground or the stack overflows its row and slides
    under both rails. Also lifts the bullet size back up for phone reading. */
 @media (max-width: 900px) {
-  .cs-fan { min-height: 30vh; }
-  .cs-card { width: min(clamp(180px, 78%, 320px), 30vh); }
+  /* Content-sized, not ratio-sized. A square card can't hold the square viz
+     plus a two-line sub plus three chips at one-column width: the 1.02 ratio
+     put the content 140px past the box, and since the card is absolutely
+     positioned and centred in the fan, that overflow went half up / half down
+     — Chrome clipped the chips (overflow:hidden), Safari grew the box and
+     parked it on top of the bullets above. Drop the ratio, cap the viz, and
+     give the fan a floor tall enough for the tallest card. */
+  .cs-fan { min-height: 340px; }
+  .cs-card {
+    width: min(78%, 320px);
+    aspect-ratio: auto;
+    min-height: 260px;
+  }
+  .cs-viz { max-width: min(100%, 168px); }
+  .cs-metric-viz .big { font-size: clamp(2rem, 6vw, 2.6rem); }
 }
 @media (max-width: 640px) {
   /* Phones get an auto-height stage. Two verbatim résumé bullets, the title
@@ -1339,7 +1363,9 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
   }
   .cs-title { font-size: clamp(1.3rem, 5.4vw, 1.8rem); }
   .cs-highlights li { font-size: 0.84rem; line-height: 1.5; }
-  .cs-fan { min-height: 28vh; }
-  .cs-card { width: min(clamp(170px, 80%, 300px), 28vh); }
+  /* Wider card at phone width = fewer chip rows = a shorter card. */
+  .cs-fan { min-height: 320px; }
+  .cs-card { width: min(88%, 300px); min-height: 240px; }
+  .cs-viz { max-width: min(100%, 150px); }
 }
 </style>

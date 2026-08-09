@@ -423,6 +423,11 @@ function measureHeroSlot() {
   }
   heroVpW = stRect.width
   heroVpH = stRect.height
+  // Published for CSS: the signature is a sibling of the frame, not a child,
+  // and on phones the frame is sized from the stage's leftover height — so a
+  // vw-based signature drifts from 80% of the portrait to 100% of it as the
+  // browser chrome shows and hides. One write per measure, not per frame.
+  sticky.style.setProperty('--hs-slot-w', `${Math.round(sRect.width)}px`)
   applyHeroTransform(true)
 }
 
@@ -3022,9 +3027,16 @@ main > section.section {
 }
 @media (max-width: 720px) {
   /* Portrait frame on phones — must stay in sync with HERO_SLOT_AR_COMPACT
-     in the script, which drives the matching page-1 crop. */
+     in the script, which drives the matching page-1 crop.
+     HEIGHT-first, not width-first: a width-driven 3:4 box is 364px tall at
+     402px wide, and the stage between .im-top and .im-foot is only ~275px on
+     a phone once Safari's chrome is showing (100svh ≈ 700). The frame then
+     overflowed downward and the landed portrait sat on top of the caption.
+     Sizing from the stage height keeps the ratio exact (so the page-1 crop
+     still matches) and guarantees the frame can never outgrow its row. */
   .im-frame {
-    width: min(68vw, 320px);
+    height: min(calc(100% - 1.25rem), calc(min(68vw, 320px) * 4 / 3));
+    width: auto;
     aspect-ratio: 3/4;
   }
 }
@@ -3108,6 +3120,13 @@ main > section.section {
 }
 @keyframes marquee-left  { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 @keyframes marquee-right { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+@media (max-width: 720px) {
+  /* Display size only works where there is width to run in. On a phone the
+     portrait sits in the middle of the band and slices 2.4rem words into
+     three-letter fragments — "BUIL … AW S". Ticker size keeps whole words
+     readable either side of the frame. */
+  .im-marquee .word { font-size: clamp(1.25rem, 5vw, 1.9rem); }
+}
 @media (prefers-reduced-motion: reduce) {
   .im-marquee.row-1 .track, .im-marquee.row-2 .track { animation: none; }
 }
@@ -3158,7 +3177,10 @@ main > section.section {
     padding-top: clamp(1.5rem, 6vh, 4rem);
   }
   .im-signature :deep(svg) {
-    width: calc(clamp(180px, 55vw, 260px) * var(--sig-scale));
+    /* Tied to the measured slot, not the viewport: keeps the same scrawl-over
+       -the-portrait proportion whether the frame is 273px tall or squeezed to
+       226 by Safari's chrome. Falls back to the old vw ramp pre-measure. */
+    width: calc(var(--hs-slot-w, min(55vw, 260px)) * 0.86 * var(--sig-scale));
   }
 }
 
@@ -3220,9 +3242,15 @@ main > section.section {
   text-align: right;
 }
 @media (max-width: 720px) {
-  .im-foot { grid-template-columns: 1fr; gap: 1rem; }
+  /* One column means the foot is the biggest block on the phone stage, and
+     every pixel it takes comes straight out of the portrait above it. Wider
+     measure = fewer caption lines; the scroll bead only needs enough track to
+     read as a track. */
+  .im-foot { grid-template-columns: 1fr; gap: 0.55rem; }
   .im-foot .caption, .im-foot .timestamp { text-align: left; }
-  .im-foot .scroll-down { align-items: flex-start; }
+  .im-foot .caption { max-width: 38ch; line-height: 1.45; letter-spacing: 0.12em; }
+  .im-foot .scroll-down { align-items: flex-start; gap: 0.4rem; }
+  .im-foot .scroll-down .arrow { height: 26px; }
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -4727,7 +4755,9 @@ main > section.section {
   padding-right: clamp(3rem, 5vw, 4.5rem);
 }
 #experience .xp-badge {
-  font: 500 0.64rem/1 var(--f-mono);
+  /* 1.45, not 1: the badge is a single line on desktop but wraps at phone
+     width, and solid leading made the wrapped word sit on the line above it. */
+  font: 500 0.64rem/1.45 var(--f-mono);
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--ink-faint);
