@@ -19,6 +19,11 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'home',
+    // Campaign aliases. Each one renders the home page but is recorded as its
+    // own path in analytics, so traffic is attributable per channel even on
+    // plans where UTM filtering is unavailable. Referrers are unreliable here:
+    // the LinkedIn and Instagram in-app browsers usually send none.
+    alias: ['/li', '/ig', '/x', '/wa', '/mail'],
     component: () => import('../views/Portfolio.vue'),
     meta: {
       num: '00',
