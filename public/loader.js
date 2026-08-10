@@ -8,7 +8,7 @@
   var seen = false;
   try {
     var sameTab = !!sessionStorage.getItem('aglShown');
-    var lastHit = parseInt(localStorage.getItem('aglLastHit'), 10) || 0;
+    var lastHit = parseInt(localStorage.getItem('aglLastHit2'), 10) || 0;
     seen = sameTab && (Date.now() - lastHit) < SESSION_MS;
   } catch (e) {}
   var docEl = document.documentElement;
@@ -20,20 +20,20 @@
 
   /* ── visitor count (resolves with number or null) ── */
   var cached = null;
-  try { cached = parseInt(localStorage.getItem('aglCount'), 10) || null; } catch (e) {}
+  try { cached = parseInt(localStorage.getItem('aglCount2'), 10) || null; } catch (e) {}
   var countPromise = new Promise(function (resolve) {
     var done = false;
     var finish = function (v) { if (!done) { done = true; resolve(v); } };
     setTimeout(function () { finish(cached); }, 2500);
     try {
-      fetch('https://abacus.jasoncameron.dev/' + (seen ? 'get' : 'hit') + '/adarsh-golait-portfolio/site-visits')
+      fetch('https://abacus.jasoncameron.dev/' + (seen ? 'get' : 'hit') + '/adarsh-golait-portfolio/site-visits-v2')
         .then(function (r) { return r.json(); })
         .then(function (d) {
           var v = d && d.value;
           if (v > 0) {
             try {
-              localStorage.setItem('aglCount', String(v));
-              if (!seen) localStorage.setItem('aglLastHit', String(Date.now()));
+              localStorage.setItem('aglCount2', String(v));
+              if (!seen) localStorage.setItem('aglLastHit2', String(Date.now()));
             } catch (e) {}
             finish(v);
           }
