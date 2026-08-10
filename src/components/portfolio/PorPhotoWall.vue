@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 
 export interface WallPhoto {
   src: string
@@ -30,6 +30,10 @@ const tagOn = ref(false)
 // nine ~300KB JPEGs otherwise download at page load, racing the hero's
 // first-paint assets. 1200px of lead keeps the swap invisible.
 const near = ref(false)
+
+// The wall reads as a static collage until something says otherwise — the
+// hint line below it is the only always-visible cue that the tiles are live.
+const assembled = computed(() => showing.every((s) => s === 'back'))
 
 let stagger = 0
 let returning = false
@@ -158,6 +162,10 @@ onBeforeUnmount(() => {
       </div>
       <span class="wg-tag" :class="{ on: tagOn }">{{ tagText }}</span>
     </div>
+    <p class="wg-hint" :class="{ on: assembled }">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.6" /><path d="M10.4 10.4 14 14" /><path d="M5.2 7h3.6" /><path v-if="!assembled" d="M7 5.2v3.6" /></svg>
+      {{ assembled ? 'Click the photo to return to the grid' : 'Click any frame to open it across the wall' }}
+    </p>
   </div>
 </template>
 
@@ -197,6 +205,10 @@ onBeforeUnmount(() => {
   background-size: cover;
   background-position: center;
 }
+/* zoom-in / zoom-out say "this opens" before any hover art loads */
+.wg-front.has-photo { cursor: zoom-in; }
+.wg-front:not(.has-photo) { cursor: default; }
+.wg-back { cursor: zoom-out; }
 .wg-front:not(.has-photo)::before {
   content: '';
   position: absolute;
@@ -205,10 +217,19 @@ onBeforeUnmount(() => {
 }
 .wg-front.has-photo {
   filter: grayscale(1);
-  transition: filter 0.25s ease, box-shadow 0.25s ease;
+  transition: filter 0.25s ease, box-shadow 0.25s ease, transform 0.22s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
-.wg-part.show-front:hover .wg-front.has-photo { filter: grayscale(0); }
-.wg-part.show-front:hover .wg-front { box-shadow: inset 0 0 0 2px var(--accent); }
+
+/* The pop lives on the face, not on .wg-part — the part's transform is the
+   flip, and sharing the property would drag the pop to the flip's 340ms. */
+@media (hover: hover) and (pointer: fine) {
+  .wg-part.show-front:hover { z-index: 3; }
+  .wg-part.show-front:hover .wg-front.has-photo {
+    filter: grayscale(0);
+    transform: translateY(-2px) scale(1.05);
+    box-shadow: inset 0 0 0 2px var(--accent), 0 12px 24px rgba(9, 9, 11, 0.24);
+  }
+}
 .wg-front .wg-ix {
   position: absolute;
   top: 5px;
@@ -273,7 +294,33 @@ onBeforeUnmount(() => {
   transition-delay: 0.55s;
 }
 
+/* always-visible affordance — touch never hovers, and neither do people who
+   read the wall as decoration */
+.wg-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font: 500 0.55rem/1.3 var(--f-mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  transition: color 0.25s ease;
+}
+.wg-hint.on { color: var(--ink); }
+.wg-hint svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wg-part { transition: none; }
+  .wg-front.has-photo { transition: filter 0.25s ease, box-shadow 0.25s ease; }
+  .wg-part.show-front:hover .wg-front.has-photo { transform: none; }
 }
 </style>
