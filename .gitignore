@@ -15,6 +15,9 @@ dist/
 .agents/
 .claude/
 
+# personal drafts — never publish
+/LinkedIn_Launch_Post_*.md
+
 # scratch / demo files (root only)
 /character.ts
 /hero-demo.html
