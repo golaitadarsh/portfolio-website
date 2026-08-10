@@ -2,7 +2,11 @@
    Plays on every page load. Visit count: abacus.jasoncameron.dev free hit counter.
    Counts a new visit when the tab is fresh OR the last counted visit is older
    than SESSION_MS; otherwise reads the current value without incrementing.
-   Last known value cached in localStorage as offline fallback. */
+   Last known value cached in localStorage as offline fallback.
+   The -v2 key replaces the original site-visits one, which a /hit created
+   implicitly and so carries no admin token — its 274 could never be cleared.
+   This key was created explicitly and reset to zero; the token lives outside
+   the repo, so the count can be reset again from a laptop. */
 (function () {
   var SESSION_MS = 30 * 60 * 1000;
   var seen = false;
