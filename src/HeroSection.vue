@@ -8,6 +8,7 @@ import { onMounted, ref, onUnmounted, defineAsyncComponent } from 'vue'
 import basePhotoUrl     from '../assets/base-photo.webp?url'
 import layeredPhotoUrl  from '../assets/layered-photo.webp?url'
 import { deviceTier, tuneRenderer } from './perf/deviceTier'
+import { hasWebGL2 } from './perf/webgl'
 
 const DotField = defineAsyncComponent(() => import('./components/dot-field/DotField.vue'))
 
@@ -19,6 +20,11 @@ const DotField = defineAsyncComponent(() => import('./components/dot-field/DotFi
 // bend around the cursor. Read once, at setup, so it can never change under a
 // live component and swap a canvas out mid-session.
 const lowTier = deviceTier() === 'low'
+
+// Nothing on this page can draw without a WebGL2 context. Asked once, up
+// front, so the surfaces that would each discover it separately (and each log
+// a hard three error for it) simply don't mount. See perf/webgl.ts.
+const webglOK = hasWebGL2()
 
 interface Props {
   showTopbar?: boolean
@@ -63,6 +69,10 @@ onMounted(() => {
   const el = container.value
 
   const canvas = el.querySelector('#three-canvas') as HTMLCanvasElement
+  if (!webglOK) {
+    webglFailed.value = true
+    return
+  }
   try {
     renderer = new THREE.WebGLRenderer({
       canvas,
@@ -723,7 +733,7 @@ onMounted(() => {
 
 <template>
   <div ref="container" class="hero">
-    <DotField v-if="!lowTier" :influence="450" :strength="2" />
+    <DotField v-if="!lowTier && webglOK" :influence="450" :strength="2" />
     <div v-else class="dot-field-static" aria-hidden="true"></div>
     <div class="hero-stack-blur" aria-hidden="true"></div>
     <canvas v-show="!webglFailed" id="three-canvas"></canvas>

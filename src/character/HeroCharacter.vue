@@ -44,20 +44,35 @@ const hoverDiv = ref<HTMLDivElement | null>(null);
 
 let cleanup: (() => void) | null = null;
 
-onMounted(() => {
-  if (!canvasDiv.value) return;
+/* Everything below runs inside onMounted, but as a named function so the
+   hook can wrap the WHOLE of it in one guard. The distinction matters: a
+   throw anywhere in here used to abort the hook silently and leave a mounted
+   component that never draws and never says why. Now every exit reports. */
+function mountStage() {
+  if (!canvasDiv.value) {
+    emit("failed");
+    return;
+  }
   const container = canvasDiv.value;
   const rect = container.getBoundingClientRect();
   const aspect = rect.width / rect.height;
   const scene = new THREE.Scene();
 
-  // WebGL can be unavailable (browser policy, headless, old GPU). The 3D
-  // character is progressive enhancement — bail to the empty stage backdrop
-  // rather than throwing from the mounted hook.
+  /* WebGL2 can be unavailable for reasons that have nothing to do with the
+     GPU's ability — Lockdown Mode, a driver blocklist, an in-app WebView
+     that only speaks WebGL1 (three needs 2 since r163). See perf/webgl.ts.
+
+     This used to `return` bare. That was the bug behind "the character
+     doesn't show up in a few browsers": the component stayed mounted with an
+     empty stage, `failed` was never emitted, so the parent never swapped in
+     the fallback and the summary section's control panel sat waiting on a
+     rig that was never coming. Silence was the whole failure. */
   let renderer: THREE.WebGLRenderer;
   try {
     renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-  } catch {
+  } catch (err) {
+    console.error("[HeroCharacter] WebGL unavailable:", err);
+    emit("failed");
     return;
   }
   tuneRenderer(renderer);
@@ -68,6 +83,17 @@ onMounted(() => {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1;
   container.appendChild(renderer.domElement);
+
+  /* Provisional disposer, live from the moment the context exists and
+     replaced by the real one at the end of this function. If anything below
+     throws, the guard in onMounted calls whichever version is current — so a
+     half-built stage still hands its context back instead of leaving a dead
+     one to count against the per-page cap and evict a live canvas. */
+  cleanup = () => {
+    renderer.dispose();
+    renderer.forceContextLoss();
+    renderer.domElement.remove();
+  };
 
   const camera = new THREE.PerspectiveCamera(props.cameraFov, aspect, 0.1, 1000);
   camera.position.set(
@@ -195,14 +221,35 @@ onMounted(() => {
   // restored at all; parking the loop keeps us from rendering into a dead
   // context in the meantime.
   const canvas = renderer.domElement;
+  /* Preventing the default only makes restoration *possible* — it does not
+     promise it. A context evicted because the page went over the browser's
+     cap stays gone (the cap is still exceeded), and the canvas is then a
+     permanently transparent rectangle that reports no error. Give the
+     browser a fair window, then treat it as a failure like any other so the
+     page can put the fallback up instead of holding an empty stage. */
+  const RESTORE_GRACE_MS = 6000;
+  let restoreTimer: number | undefined;
   const onContextLost = (e: Event) => {
     e.preventDefault();
     console.warn("[HeroCharacter] WebGL context lost; pausing render loop");
     if (rafId !== 0) cancelAnimationFrame(rafId);
     rafId = 0;
+    clearTimeout(restoreTimer);
+    restoreTimer = window.setTimeout(function giveUp() {
+      /* A backgrounded tab is the ordinary reason a restore is late, and
+         killing the rig for someone who simply switched tabs would be a
+         worse bug than the one this guards. Only judge a visible page. */
+      if (document.hidden) {
+        restoreTimer = window.setTimeout(giveUp, RESTORE_GRACE_MS);
+        return;
+      }
+      console.error("[HeroCharacter] WebGL context never restored; falling back");
+      emit("failed");
+    }, RESTORE_GRACE_MS);
   };
   const onContextRestored = () => {
     console.warn("[HeroCharacter] WebGL context restored; resuming");
+    clearTimeout(restoreTimer);
     clock.getDelta();
     if (rafId === 0 && inViewport) rafId = requestAnimationFrame(animate);
   };
@@ -281,6 +328,7 @@ onMounted(() => {
     cancelAnimationFrame(rafId);
     clearTimeout(touchTimer);
     clearTimeout(introTimer);
+    clearTimeout(restoreTimer);
     visObs.disconnect();
     document.removeEventListener("mousemove", onMouseMove);
     container.removeEventListener("touchstart", onTouchStart);
@@ -318,6 +366,26 @@ onMounted(() => {
       container.removeChild(renderer.domElement);
     }
   };
+}
+
+onMounted(() => {
+  try {
+    mountStage();
+  } catch (err) {
+    /* Anything at all — a driver that rejects a shadow map, an extension
+       probe that throws, a layout read on a detached node. Vue swallows a
+       throw from a lifecycle hook into a warning; the visitor just gets a
+       stage with nothing on it. Report it and let the parent show the
+       fallback, which is the same outcome as every other failure here. */
+    console.error("[HeroCharacter] stage init failed:", err);
+    try {
+      cleanup?.();
+    } catch {
+      /* never let teardown mask the original failure */
+    }
+    cleanup = null;
+    emit("failed");
+  }
 });
 
 onBeforeUnmount(() => {

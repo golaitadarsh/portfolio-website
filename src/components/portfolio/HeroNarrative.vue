@@ -30,6 +30,15 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 // pulled in either.
 import { transform } from 'motion-v'
 
+interface Props {
+  /** False when the stage is showing a still instead of the live rig — the
+   *  "try moving your cursor" line promises an interaction that only exists
+   *  when he can actually look back at you. Everything else in this layer is
+   *  scroll-driven and reads the same either way. */
+  interactive?: boolean
+}
+const props = withDefaults(defineProps<Props>(), { interactive: true })
+
 // A line is typed, not just coloured: the reference composition gets its
 // editorial voice from mixing a heavy condensed face against a light one at
 // three or four sizes inside a single block. `hi` is only the colour switch —
@@ -369,7 +378,7 @@ defineExpose({ publish, reset, handoverBands })
 
     <div class="cr-bottom">
       <div class="cr-meta-stack">
-        <p class="cr-hint">
+        <p v-if="props.interactive" class="cr-hint">
           <span class="cr-hint-arrow" aria-hidden="true">→</span>
           <span class="cr-hint-label cr-hint-label--fine">Try moving your cursor</span>
           <span class="cr-hint-label cr-hint-label--coarse">Drag to make him look</span>
