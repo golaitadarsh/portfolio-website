@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { maxPixelRatio } from '../perf/deviceTier'
 
 interface Props {
   intensity?: 'subtle' | 'medium' | 'strong'
@@ -119,7 +120,7 @@ onMounted(() => {
     // 2D canvas under a 52px blur. At DPR 3 the uncapped backing store cost
     // 2.25× the fill of DPR 2 for sharpness no eye can resolve through that
     // much blur.
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const dpr = Math.min(window.devicePixelRatio || 1, maxPixelRatio())
     const w = parent.clientWidth || window.innerWidth
     const h = parent.clientHeight || window.innerHeight
     const bw = Math.round(w * dpr)

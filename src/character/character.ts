@@ -12,6 +12,50 @@ export interface CharacterOptions {
   pantColor?: string | null;
 }
 
+/* Precompile the character's shaders, but never let it become a way to lose
+   the character entirely.
+
+   renderer.compileAsync() is a nice-to-have: it warms the shaders so the first
+   visible frame doesn't hitch. Three implements it by polling the
+   KHR_parallel_shader_compile extension — `checkMaterialsReady` reschedules
+   itself every 10ms until every material reports ready, with no timeout and no
+   rejection path anywhere in it. On drivers where that extension never flips
+   COMPLETION_STATUS_KHR (documented on several Intel/ANGLE configurations and
+   older mobile GPUs) the returned promise simply never settles.
+
+   That was fatal here, because the model is only added to the scene *after*
+   this await: on those machines the character silently never appeared, with no
+   error in the console and no fallback — the stage just stayed empty forever.
+
+   A deadline turns a permanent failure into an invisible one. If the compile
+   hasn't reported back in time we carry on and let three compile the materials
+   lazily on first render, which it does automatically. Worst case is a single
+   dropped frame the first time the character is drawn; best case, and the case
+   on every machine where the extension behaves, nothing changes at all. */
+const COMPILE_DEADLINE_MS = 2500;
+
+function compileWithDeadline(
+  renderer: THREE.WebGLRenderer,
+  character: THREE.Object3D,
+  camera: THREE.PerspectiveCamera,
+  scene: THREE.Scene
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, COMPILE_DEADLINE_MS);
+  });
+  const compile = Promise.resolve()
+    .then(() => renderer.compileAsync(character, camera, scene))
+    /* A compile that throws is also not a reason to lose the character. */
+    .catch((err) => {
+      console.warn("[character] shader precompile failed, continuing:", err);
+    })
+    .then(() => {
+      clearTimeout(timer);
+    });
+  return Promise.race([compile, deadline]);
+}
+
 const setCharacter = (
   renderer: THREE.WebGLRenderer,
   scene: THREE.Scene,
@@ -34,8 +78,24 @@ const setCharacter = (
   dracoLoader.setDecoderPath(dracoPath);
   loader.setDRACOLoader(dracoLoader);
 
+  /* Upper bound on the whole load. GLTFLoader has no timeout of its own, so a
+     stalled 4MB transfer — captive-portal wifi, a proxy that accepts the
+     connection and then never sends a byte — left this promise pending
+     forever, and with it every piece of UI waiting on the character. Failing
+     at a known point is what lets the page show a fallback and move on.
+     Generous on purpose: this is a ceiling for the pathological case, not a
+     performance budget. */
+  const LOAD_DEADLINE_MS = 30000;
+
   const loadCharacter = () => {
     return new Promise<GLTF | null>((resolve, reject) => {
+      let settled = false;
+      const finishOk = (g: GLTF) => { if (!settled) { settled = true; clearTimeout(watchdog); resolve(g); } };
+      const finishErr = (e: unknown) => { if (!settled) { settled = true; clearTimeout(watchdog); reject(e); } };
+      const watchdog = setTimeout(
+        () => finishErr(new Error(`character model timed out after ${LOAD_DEADLINE_MS}ms`)),
+        LOAD_DEADLINE_MS
+      );
       loader.load(
         modelPath,
         async (gltf) => {
@@ -43,7 +103,7 @@ const setCharacter = (
           character.scale.setScalar(scale);
           character.position.set(position[0], position[1], position[2]);
           character.rotation.y = facingRadians;
-          await renderer.compileAsync(character, camera, scene);
+          await compileWithDeadline(renderer, character, camera, scene);
 
           character.traverse((child: any) => {
             if (child.isMesh) {
@@ -65,14 +125,23 @@ const setCharacter = (
             }
           });
 
-          disposers.push(setupScreenEmissive(character));
-          resolve(gltf);
+          /* Cosmetic. The screen-flicker rig depends on specific node names
+             inside the GLB, so an exported model that renamed or dropped one
+             of them used to throw here — before resolve() — and take the whole
+             character down with it over a flickering monitor. */
+          try {
+            disposers.push(setupScreenEmissive(character));
+          } catch (err) {
+            console.warn("[character] screen emissive setup failed:", err);
+          }
+          finishOk(gltf);
           dracoLoader.dispose();
         },
         undefined,
         (error) => {
           console.error("Error loading GLTF model:", error);
-          reject(error);
+          dracoLoader.dispose();
+          finishErr(error);
         }
       );
     });

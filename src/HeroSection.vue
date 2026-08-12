@@ -7,8 +7,18 @@ import { onMounted, ref, onUnmounted, defineAsyncComponent } from 'vue'
 // sources stay in assets/ as the editing masters.
 import basePhotoUrl     from '../assets/base-photo.webp?url'
 import layeredPhotoUrl  from '../assets/layered-photo.webp?url'
+import { deviceTier, tuneRenderer } from './perf/deviceTier'
 
 const DotField = defineAsyncComponent(() => import('./components/dot-field/DotField.vue'))
+
+// The dot field is a second full-screen WebGL context stacked behind the hero's
+// own one. Creating it costs a context + extension probe whether or not anyone
+// ever moves a cursor over it, and on a machine that is already dropping frames
+// that is the wrong trade. Below the tier bar it renders as a static CSS dot
+// grid instead: same colour, same 28px pitch, same dot size — it just doesn't
+// bend around the cursor. Read once, at setup, so it can never change under a
+// live component and swap a canvas out mid-session.
+const lowTier = deviceTier() === 'low'
 
 interface Props {
   showTopbar?: boolean
@@ -65,6 +75,7 @@ onMounted(() => {
     webglFailed.value = true
     return
   }
+  tuneRenderer(renderer)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(el.clientWidth, el.clientHeight)
   renderer.setClearColor(0x000000, 0)
@@ -712,7 +723,8 @@ onMounted(() => {
 
 <template>
   <div ref="container" class="hero">
-    <DotField :influence="450" :strength="2" />
+    <DotField v-if="!lowTier" :influence="450" :strength="2" />
+    <div v-else class="dot-field-static" aria-hidden="true"></div>
     <div class="hero-stack-blur" aria-hidden="true"></div>
     <canvas v-show="!webglFailed" id="three-canvas"></canvas>
     <img v-if="webglFailed" class="three-canvas-fallback" :src="basePhotoUrl" alt="" aria-hidden="true" />
@@ -756,6 +768,23 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* Static stand-in for <DotField> on machines below the tier bar (see the
+   `lowTier` note in the script). Reproduces the shader's resting state: the
+   same #3a3a3a dot on white, the same 1.4px radius, the same 28px grid pitch.
+   What it cannot do is bulge the dots around the cursor — which is precisely
+   the part those machines were rendering at 30fps anyway. Occupies the same
+   box and z-index as the canvas it replaces, so nothing above it moves. */
+.dot-field-static {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: #fff;
+  background-image: radial-gradient(circle, #3a3a3a 0.7px, transparent 1.5px);
+  background-size: 28px 28px;
+  background-position: 14px 14px;
+}
+
 .hero {
   position: relative;
   width: 100%;

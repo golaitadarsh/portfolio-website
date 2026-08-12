@@ -32,9 +32,26 @@
     <meta name="twitter:image:alt" content="Adarsh Golait — portfolio card: mechanical engineer, operations and program build, IITGN '23 Gold Medalist, Axis Bank Mumbai." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&family=Oswald:wght@300..700&display=swap" rel="stylesheet" />
+    <!-- The visitor counter the loading screen shows. Its round trip is the
+         longest pole left in the loader: the odometer cannot start settling
+         until the number arrives, and the loader cannot leave until the
+         odometer has settled. Warming DNS + TCP + TLS here means the fetch
+         loader.js fires a few milliseconds later pays for none of that. -->
+    <link rel="preconnect" href="https://abacus.jasoncameron.dev" />
+
+    <!-- The loader's stylesheet and script come BEFORE the font stylesheet, and
+         the order is load-bearing. A synchronous <script> must wait for every
+         stylesheet declared above it to finish — the browser cannot know the
+         script won't read a computed style. With the Google Fonts link first,
+         loader.js sat blocked on a third-party round trip and did not start
+         executing until 492ms, which delayed the visitor-count fetch it kicks
+         off by the same amount and pushed the whole loading screen out behind
+         it. Local CSS first, then the loader, then the fonts: the counter
+         request now leaves at first opportunity instead of last. -->
     <link rel="stylesheet" href="/loader.css" />
     <script src="/loader.js"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&family=Oswald:wght@300..700&display=swap" rel="stylesheet" />
   </head>
   <body>
     <script>

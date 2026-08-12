@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import * as THREE from 'three'
 import { onMounted, onUnmounted, ref } from 'vue'
+import { tuneRenderer } from '../../perf/deviceTier'
 
 interface Props {
   dotColor?: string
@@ -52,6 +53,7 @@ onMounted(() => {
   } catch {
     return
   }
+  tuneRenderer(renderer)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(el.clientWidth, el.clientHeight)
   const bg = new THREE.Color(props.bgColor)

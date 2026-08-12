@@ -5,6 +5,7 @@ import { GLTFLoader } from "three-stdlib";
 import setCharacter from "./character";
 import setLighting from "./lighting";
 import { handleMouseMove, handleHeadRotation } from "./mouseUtils";
+import { tuneRenderer } from "../perf/deviceTier";
 import "./CharacterModel.css";
 
 /**
@@ -37,6 +38,8 @@ const props = withDefaults(defineProps<Props>(), { paused: false, showActions: t
 
 const emit = defineEmits<{
   (e: "loaded"): void;
+  /** Model could not be loaded — the stage should stop waiting on it. */
+  (e: "failed"): void;
   (e: "state", s: {
     ready: boolean;
     busy: boolean;
@@ -157,6 +160,7 @@ onMounted(() => {
   } catch {
     return; // progressive enhancement — leave the empty stage
   }
+  tuneRenderer(renderer);
   renderer.setSize(rect.width, rect.height);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -532,7 +536,35 @@ onMounted(() => {
     } else {
       window.setTimeout(prefetch, 1200);
     }
+  }).catch((err) => {
+    // Nothing was catching this. A failure anywhere in the chain above — the
+    // model download, the shader precompile, the idle clip — left the promise
+    // rejected, `ready` false and "loaded" never emitted. The summary stage
+    // reads that state as "still arriving" and waits for it forever, which is
+    // why a failed character took the whole section down with it rather than
+    // just being an empty plinth. Report it and let the section move on.
+    console.error("[SummaryCharacter] model failed to load:", err);
+    emit("failed");
   });
+
+  // See the matching note in HeroCharacter: a lost context is silent and
+  // permanent unless the default is prevented, and this rig is the second of
+  // several on the page — the most likely one to be evicted if the browser's
+  // per-page context cap is reached.
+  const glCanvas = renderer.domElement;
+  const onContextLost = (e: Event) => {
+    e.preventDefault();
+    console.warn("[SummaryCharacter] WebGL context lost; pausing render loop");
+    if (rafId !== 0) cancelAnimationFrame(rafId);
+    rafId = 0;
+  };
+  const onContextRestored = () => {
+    console.warn("[SummaryCharacter] WebGL context restored; resuming");
+    clock.getDelta();
+    if (rafId === 0 && inViewport) rafId = requestAnimationFrame(animate);
+  };
+  glCanvas.addEventListener("webglcontextlost", onContextLost);
+  glCanvas.addEventListener("webglcontextrestored", onContextRestored);
 
   // Out of the viewport = fully asleep: no mixer stepping, no head-follow,
   // no render — the loop stops re-arming and the IntersectionObserver
@@ -601,6 +633,8 @@ onMounted(() => {
       });
     });
     scene.clear();
+    glCanvas.removeEventListener("webglcontextlost", onContextLost);
+    glCanvas.removeEventListener("webglcontextrestored", onContextRestored);
     renderer.dispose();
     // dispose() releases three's GPU objects but not the WebGL context itself
     // — see the same note in HeroCharacter.vue. Contexts are a capped global
