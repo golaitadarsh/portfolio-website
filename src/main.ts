@@ -20,12 +20,22 @@ app.mount('#app')
 // still downloading at that point is below the fold and can arrive in its own
 // time. The loader keeps 'load' and a timeout as backstops, so this event
 // failing to fire delays the exit rather than preventing it.
-router.isReady().then(() => {
-  nextTick(() => {
-    requestAnimationFrame(() => {
+const signalReady = () => window.dispatchEvent(new Event('agl:ready'))
+
+router.isReady().then(
+  () => {
+    nextTick(() => {
       requestAnimationFrame(() => {
-        window.dispatchEvent(new Event('agl:ready'))
+        requestAnimationFrame(signalReady)
       })
     })
-  })
-})
+  },
+  (err) => {
+    // The initial navigation failed — a route chunk that 404s after a deploy,
+    // a guard that threw. Without this the rejection is unhandled AND the
+    // loader never hears anything, so it sits there until its own timeout
+    // instead of getting out of the way of whatever the app managed to render.
+    console.error('[main] initial route failed to resolve:', err)
+    signalReady()
+  },
+)
