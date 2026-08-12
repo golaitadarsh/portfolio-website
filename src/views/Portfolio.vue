@@ -9,12 +9,21 @@ import PorPhotoWall from '../components/portfolio/PorPhotoWall.vue'
 import type { WallPhoto } from '../components/portfolio/PorPhotoWall.vue'
 import TimedCards from '../components/portfolio/TimedCards.vue'
 import { useMobileNav } from '../composables/useMobileNav'
+import { hasWebGL2 } from '../perf/webgl'
 import signatureSvgRaw from '../../assets/signature.svg?raw'
 // Framer Motion's keyframe interpolator, via Motion for Vue. Pure function —
 // the `<motion.*>` components do not survive on this route (see the header of
 // HeroNarrative.vue), so every scrub here writes styles from a rAF instead.
 import { transform } from 'motion-v'
 import iitgnCampusImg from '../../assets/IIT_Gandhinagar/IITGN.jpg'
+/* Stills of the two rigs, rendered out of the live scenes at the exact
+   framing each camera uses (see .cr-character-still / .sum-char-still for
+   how the numbers are reproduced in CSS). They are imported rather than
+   referenced by path so Vite fingerprints them — and because the <img> only
+   renders on the fallback branch, a visitor whose browser CAN run the 3D
+   never requests either file. */
+import characterStillHero from '../../assets/character-still-hero.png'
+import characterStillSummary from '../../assets/character-still-summary.png'
 
 // Phone-width nav sheet. Same <nav> markup as the desktop row — the scroll-spy
 // observer and the pin-landing click handler both bind to `.portfolio-topbar
@@ -65,8 +74,78 @@ const signatureMarkup = (() => {
   return svg.trim()
 })()
 
-const HeroCharacter = defineAsyncComponent(() => import('../character/HeroCharacter.vue'))
-const SummaryCharacter = defineAsyncComponent(() => import('../character/SummaryCharacter.vue'))
+/* ── 3D character: one place that decides whether he can run at all ──────
+   The two rigs are the same GLB on two WebGL2 contexts. Both are optional,
+   and both have exactly two ways to be impossible on a given machine:
+
+     1. the browser will not give out a WebGL2 context (Lockdown Mode, a
+        driver blocklist, an in-app WebView — see perf/webgl.ts), or
+     2. the JS chunk that contains the rig never arrives.
+
+   Asked here, once, before either component is created — so on a browser
+   that cannot draw him the page goes straight to the still image instead of
+   mounting a canvas that will never paint. Anything that goes wrong *after*
+   a successful mount still lands in the same two refs via @failed, so there
+   is a single answer to "is the character on screen" no matter how it failed.
+
+   The rig could not be loaded on this machine — a blocked or exhausted WebGL
+   context, a driver that never finishes compiling shaders, a stalled model
+   download, a chunk that 404s after a redeploy. Every one of those used to
+   end in the same place: an empty character slot next to a control panel
+   that would never light up, with nothing to tell the reader that the
+   section was finished rather than stuck. The summary text is the content
+   here and stands on its own, so the section drops the rig and its controls
+   and shows a still of him instead. */
+const webglOK = hasWebGL2()
+const charFailed = ref(!webglOK)
+// Same for the rig behind the doors. Falling back to .cr-character-placeholder
+// (the element that already stands in before he is warmed up) means the door
+// reveal still opens onto a composed stage rather than a hole.
+const heroCharFailed = ref(!webglOK)
+if (!webglOK) {
+  console.warn('[Portfolio] WebGL2 unavailable — 3D character replaced by a still image')
+}
+
+/* Chunk loads fail for reasons that have nothing to do with the code in
+   them: a dropped mobile connection, a proxy or content blocker, or — the
+   one that bites in production — a visitor holding a cached index.html from
+   the previous deploy, asking for asset hashes that no longer exist. The SPA
+   rewrite turns that 404 into index.html, so the browser tries to parse HTML
+   as a module and the import rejects.
+
+   Unhandled, Vue logs a warning and renders nothing at all: not the rig, not
+   the fallback, because as far as the template is concerned the component is
+   still on its way. Retry twice for the transient half, then fail loudly
+   into the same flag every other failure uses. */
+function withChunkRetry(
+  name: string,
+  loader: () => Promise<unknown>,
+  onGiveUp: () => void,
+) {
+  return defineAsyncComponent({
+    loader: loader as never,
+    onError(error, retry, fail, attempts) {
+      if (attempts <= 2) {
+        setTimeout(retry, 300 * attempts)
+        return
+      }
+      console.error(`[Portfolio] ${name} chunk failed to load:`, error)
+      onGiveUp()
+      fail()
+    },
+  })
+}
+
+const HeroCharacter = withChunkRetry(
+  'HeroCharacter',
+  () => import('../character/HeroCharacter.vue'),
+  () => { heroCharFailed.value = true },
+)
+const SummaryCharacter = withChunkRetry(
+  'SummaryCharacter',
+  () => import('../character/SummaryCharacter.vue'),
+  () => { charFailed.value = true },
+)
 const FluidCursor = defineAsyncComponent(() => import('../components/fluid-cursor/FluidCursor.vue'))
 
 const characterVisible = ref(false)
@@ -1231,21 +1310,11 @@ const charState = reactive({
   pushing: false,
   active: null as string | null,
 })
-// The 3D rig could not be loaded on this machine — a blocked or exhausted
-// WebGL context, a driver that never finishes compiling shaders, a stalled
-// model download. Every one of those used to end in the same place: an empty
-// character slot next to a control panel that would never light up, with
-// nothing to tell the reader that the section was finished rather than stuck.
-// The summary text is the content here and stands on its own, so the section
-// drops the rig and its controls and reads as an ordinary block of copy.
-const charFailed = ref(false)
+// Both refs are declared with the async components at the top of this file —
+// see the note there for why the decision is made in one place.
 function onCharFailed() {
   charFailed.value = true
 }
-// Same for the rig behind the doors. Falling back to .cr-character-placeholder
-// (the element that already stands in before he is warmed up) means the door
-// reveal still opens onto a composed stage rather than a hole.
-const heroCharFailed = ref(false)
 
 function onCharState(s: { ready: boolean; busy: boolean; pushing: boolean; active: string | null }) {
   charState.ready = s.ready
@@ -2181,11 +2250,24 @@ onBeforeUnmount(() => {
             :paused="doorProgressRef < 0.001"
             @failed="heroCharFailed = true"
           />
-          <div v-else class="cr-character-placeholder" aria-hidden="true"></div>
+          <!-- Two different reasons to be here, and only one of them is
+               permanent: he is either still warming up (empty — the stage
+               gradient and beams are the composition until he arrives) or he
+               cannot run on this browser at all, in which case the door
+               reveal opens onto a still of him instead of onto nothing. -->
+          <div v-else class="cr-character-placeholder" aria-hidden="true">
+            <img
+              v-if="heroCharFailed"
+              class="cr-character-still"
+              :src="characterStillHero"
+              alt=""
+              decoding="async"
+            />
+          </div>
           <!-- Three scroll-scrubbed story states. Its own component so that
                Portfolio.vue re-renders can't tear down its Motion bindings —
                see the note at the top of HeroNarrative.vue. -->
-          <HeroNarrative ref="heroNarrativeRef" />
+          <HeroNarrative ref="heroNarrativeRef" :interactive="!heroCharFailed" />
         </div>
 
         <!-- P2 front-stack — wraps the real intro-message + landed HeroSection
@@ -2343,6 +2425,17 @@ onBeforeUnmount(() => {
              reduced motion): the component shows its own buttons. -->
         <div class="char-slot">
           <SummaryCharacter v-if="summaryNear && !charFailed" ref="summaryCharRef" :show-actions="!sumStaged" @state="onCharState" @metrics="onCharMetrics" @failed="onCharFailed" />
+          <!-- No rig on this browser. The plinth keeps a person on it — the
+               same pose, framed the way the camera framed it — rather than
+               leaving a column of white beside the copy. -->
+          <img
+            v-else-if="charFailed"
+            class="sum-char-still"
+            :src="characterStillSummary"
+            alt=""
+            aria-hidden="true"
+            decoding="async"
+          />
         </div>
         <!-- The panel drives the character's clips, so it is meaningless
              without him. When the rig fails to load (see onCharFailed) it is
@@ -3357,6 +3450,27 @@ main > section.section {
   inset: 0;
   z-index: 1;
 }
+/* Still of the hero rig, for browsers that cannot create a WebGL2 context.
+   The numbers are measured off the live render, not guessed: in the 3D the
+   subject is horizontally centred and runs from 31.2% of the stage height
+   down past the bottom edge, so the still is centred, bottom-anchored and
+   68.8% of the stage tall. Sizing by HEIGHT is what makes it match at any
+   width — the camera frames by vertical fov too, so a wider viewport shows
+   more room around him rather than a bigger him, which is exactly what a
+   height-sized image does. */
+.hs-sticky .cr-character-still {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  height: 68.8%;
+  width: auto;
+  max-width: none;
+  /* The rig's own canvas is composited straight onto the stage with no
+     filter; the still is a capture of that same output, so it needs none. */
+  pointer-events: none;
+  user-select: none;
+}
 /* Résumé CTA — single element on the sticky stage's top layer (above
    hs-front z5 and the door halves z3). Position mirrors im-top's old CTA
    cell: its top/right offsets equal im-top's padding, so it sits exactly
@@ -3753,6 +3867,23 @@ main > section.section {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
+}
+/* Still of the summary rig, for browsers with no WebGL2. Measured off the
+   live render the same way as the hero still: centred, top edge at 11.4% of
+   the slot and 75.5% of it tall. The rig itself frames the body by height
+   and publishes its metrics as height ratios for exactly this reason (see
+   PushMetrics in SummaryCharacter.vue), so a height-sized image is the
+   faithful stand-in at any column width. */
+#summary .char-slot .sum-char-still {
+  position: absolute;
+  left: 50%;
+  top: 11.4%;
+  transform: translateX(-50%);
+  height: 75.5%;
+  width: auto;
+  max-width: none;
+  pointer-events: none;
+  user-select: none;
 }
 #summary.sum-staged .summary-char {
   height: auto;

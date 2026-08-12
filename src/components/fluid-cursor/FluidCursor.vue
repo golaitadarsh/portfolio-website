@@ -2,6 +2,7 @@
 import type { HTMLAttributes } from "vue";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { deviceTier, glInitSlot } from "../../perf/deviceTier";
+import { hasWebGL2 } from "../../perf/webgl";
 const cn = (...a: unknown[]) =>
   a.filter((v): v is string => typeof v === "string" && v.length > 0).join(" ");
 
@@ -139,7 +140,10 @@ onMounted(() => {
     // from measured frame times instead of a guess off navigator hints. A
     // machine that spent that window dropping frames does not also get a
     // full-screen fluid simulation composited over every other layer.
-    if (deviceTier() === "low") {
+    // …and only where a context can exist at all. Without this the sim asks
+    // for one anyway on a WebGL-less browser and three logs a hard error for
+    // a decoration nobody was promised.
+    if (deviceTier() === "low" || !hasWebGL2()) {
       bootCleanup?.();
       bootCleanup = null;
       return;

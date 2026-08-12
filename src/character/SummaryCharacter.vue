@@ -148,17 +148,29 @@ function lockRootXZ(clip: THREE.AnimationClip) {
   return clip;
 }
 
-onMounted(() => {
+/* Named so onMounted can guard the whole body in one place — see the
+   matching note in HeroCharacter.vue. Every path out of here reports. */
+function mountStage() {
   const container = canvasDiv.value;
-  if (!container) return;
+  if (!container) {
+    emit("failed");
+    return;
+  }
   const rect = container.getBoundingClientRect();
   const scene = new THREE.Scene();
 
+  /* No WebGL2 on this browser (Lockdown Mode, a driver blocklist, an in-app
+     WebView — see perf/webgl.ts). This used to `return` bare, which was the
+     worst version of the failure on this component: `ready` stayed false
+     forever, so the section's control panel sat there permanently un-lit
+     waiting for a rig that was never going to arrive. */
   let renderer: THREE.WebGLRenderer;
   try {
     renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-  } catch {
-    return; // progressive enhancement — leave the empty stage
+  } catch (err) {
+    console.error("[SummaryCharacter] WebGL unavailable:", err);
+    emit("failed");
+    return;
   }
   tuneRenderer(renderer);
   renderer.setSize(rect.width, rect.height);
@@ -166,6 +178,16 @@ onMounted(() => {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1;
   container.appendChild(renderer.domElement);
+
+  /* Provisional disposer — replaced by the real one at the end of this
+     function. Keeps a half-built stage from leaking its context if anything
+     below throws; contexts are capped per page and the browser evicts the
+     oldest, so a leak here blanks a canvas somewhere else. */
+  cleanup = () => {
+    renderer.dispose();
+    renderer.forceContextLoss();
+    renderer.domElement.remove();
+  };
 
   const camera = new THREE.PerspectiveCamera(
     26,
@@ -552,14 +574,31 @@ onMounted(() => {
   // several on the page — the most likely one to be evicted if the browser's
   // per-page context cap is reached.
   const glCanvas = renderer.domElement;
+  /* preventDefault makes a restore possible, not certain — a context evicted
+     over the browser's per-page cap never comes back. Give it a window, then
+     fail properly so the section drops the rig and its controls instead of
+     showing a live panel wired to a blank canvas. */
+  const RESTORE_GRACE_MS = 6000;
+  let restoreTimer: number | undefined;
   const onContextLost = (e: Event) => {
     e.preventDefault();
     console.warn("[SummaryCharacter] WebGL context lost; pausing render loop");
     if (rafId !== 0) cancelAnimationFrame(rafId);
     rafId = 0;
+    clearTimeout(restoreTimer);
+    restoreTimer = window.setTimeout(function giveUp() {
+      // A backgrounded tab is the ordinary reason a restore is late.
+      if (document.hidden) {
+        restoreTimer = window.setTimeout(giveUp, RESTORE_GRACE_MS);
+        return;
+      }
+      console.error("[SummaryCharacter] WebGL context never restored; falling back");
+      emit("failed");
+    }, RESTORE_GRACE_MS);
   };
   const onContextRestored = () => {
     console.warn("[SummaryCharacter] WebGL context restored; resuming");
+    clearTimeout(restoreTimer);
     clock.getDelta();
     if (rafId === 0 && inViewport) rafId = requestAnimationFrame(animate);
   };
@@ -615,6 +654,7 @@ onMounted(() => {
 
   cleanup = () => {
     cancelAnimationFrame(rafId);
+    clearTimeout(restoreTimer);
     visObs.disconnect();
     document.removeEventListener("mousemove", onMouseMove);
     disposeCharacter();
@@ -650,9 +690,27 @@ onMounted(() => {
   }
   actionHandler = onActionClick;
   playActionImpl = (name: string) => void playOnce(name as ClipName);
-});
+}
 
 let actionHandler: (name: ClipName) => void = () => {};
+
+onMounted(() => {
+  try {
+    mountStage();
+  } catch (err) {
+    // Vue turns a throw from a lifecycle hook into a console warning and
+    // carries on, which here meant an empty plinth beside a dead control
+    // panel. Any failure lands on the same honest outcome as the others.
+    console.error("[SummaryCharacter] stage init failed:", err);
+    try {
+      cleanup?.();
+    } catch {
+      /* teardown must not mask the original failure */
+    }
+    cleanup = null;
+    emit("failed");
+  }
+});
 
 onBeforeUnmount(() => {
   cleanup?.();
