@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { maxPixelRatio } from '../perf/deviceTier'
 
 interface Props {
   intensity?: 'subtle' | 'medium' | 'strong'
@@ -113,13 +114,21 @@ onMounted(() => {
   let lastW = -1
   let lastH = -1
 
+  // Resolved ONCE, at mount. The tier verdict can sharpen during the load
+  // window (the probe watches real frame times before it commits), so reading
+  // it per resize meant the cap could drop from 2 to 1.5 partway through a
+  // session — and since the cap feeds the backing-store size, the next resize
+  // would rebuild all 45 sprites and visibly restart the field for no reason
+  // the viewer could see. Whatever tier this mount decided on, it keeps.
+  const dprCap = maxPixelRatio()
+
   const updateCanvasSize = () => {
     // Capped at 2 like every other canvas on the site. This one was the sole
     // exception, and it is the most expensive surface here: a full-viewport
     // 2D canvas under a 52px blur. At DPR 3 the uncapped backing store cost
     // 2.25× the fill of DPR 2 for sharpness no eye can resolve through that
     // much blur.
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const dpr = Math.min(window.devicePixelRatio || 1, dprCap)
     const w = parent.clientWidth || window.innerWidth
     const h = parent.clientHeight || window.innerHeight
     const bw = Math.round(w * dpr)

@@ -11,6 +11,7 @@ import {
 } from "./mouseUtils";
 import setAnimations from "./animationUtils";
 import setupIdleMotion from "./idleMotion";
+import { tuneRenderer } from "../perf/deviceTier";
 import "./CharacterModel.css";
 
 interface Props {
@@ -36,7 +37,7 @@ const props = withDefaults(defineProps<Props>(), {
   paused: false,
 });
 
-const emit = defineEmits<{ (e: "loaded"): void }>();
+const emit = defineEmits<{ (e: "loaded"): void; (e: "failed"): void }>();
 
 const canvasDiv = ref<HTMLDivElement | null>(null);
 const hoverDiv = ref<HTMLDivElement | null>(null);
@@ -59,6 +60,7 @@ onMounted(() => {
   } catch {
     return;
   }
+  tuneRenderer(renderer);
   renderer.setSize(rect.width, rect.height);
   // Cap at 2 like every other canvas on the site — 3x-DPR devices pay 2.25x
   // the fill cost for sharpness the eye can't resolve on a lit 3D scene.
@@ -173,7 +175,39 @@ onMounted(() => {
     }, props.introDelayMs);
 
     emit("loaded");
+  }).catch((err) => {
+    // Nothing downstream was watching this promise, so a failed model load —
+    // a stalled 4MB download on hotel wifi, a decode error, a lost context
+    // mid-load — surfaced as an unhandled rejection and an empty stage that
+    // never explained itself. The stage behind is a designed backdrop and
+    // stands on its own, so the honest degradation is to leave it and say so
+    // in the console rather than pretend a character is still coming.
+    console.error("[HeroCharacter] model failed to load:", err);
+    emit("failed");
   });
+
+  // A WebGL context can be taken away at any time: the GPU resets, the driver
+  // is updated, the tab is backgrounded on a low-memory machine, or the page
+  // exceeds the browser's per-page context cap and the oldest is evicted. The
+  // default action for this event is permanent — the canvas goes blank and
+  // never comes back, which reads to a visitor as "the 3D is broken on my
+  // laptop". Preventing the default is what makes the context eligible to be
+  // restored at all; parking the loop keeps us from rendering into a dead
+  // context in the meantime.
+  const canvas = renderer.domElement;
+  const onContextLost = (e: Event) => {
+    e.preventDefault();
+    console.warn("[HeroCharacter] WebGL context lost; pausing render loop");
+    if (rafId !== 0) cancelAnimationFrame(rafId);
+    rafId = 0;
+  };
+  const onContextRestored = () => {
+    console.warn("[HeroCharacter] WebGL context restored; resuming");
+    clock.getDelta();
+    if (rafId === 0 && inViewport) rafId = requestAnimationFrame(animate);
+  };
+  canvas.addEventListener("webglcontextlost", onContextLost);
+  canvas.addEventListener("webglcontextrestored", onContextRestored);
 
   // Two gates, different costs:
   //  · paused prop (doors closed, stage occluded but on screen) — skip only
@@ -270,6 +304,8 @@ onMounted(() => {
         m.dispose?.();
       });
     });
+    canvas.removeEventListener("webglcontextlost", onContextLost);
+    canvas.removeEventListener("webglcontextrestored", onContextRestored);
     scene.clear();
     renderer.dispose();
     // dispose() releases three's GPU objects but not the WebGL context itself.

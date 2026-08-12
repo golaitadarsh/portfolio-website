@@ -1231,6 +1231,22 @@ const charState = reactive({
   pushing: false,
   active: null as string | null,
 })
+// The 3D rig could not be loaded on this machine — a blocked or exhausted
+// WebGL context, a driver that never finishes compiling shaders, a stalled
+// model download. Every one of those used to end in the same place: an empty
+// character slot next to a control panel that would never light up, with
+// nothing to tell the reader that the section was finished rather than stuck.
+// The summary text is the content here and stands on its own, so the section
+// drops the rig and its controls and reads as an ordinary block of copy.
+const charFailed = ref(false)
+function onCharFailed() {
+  charFailed.value = true
+}
+// Same for the rig behind the doors. Falling back to .cr-character-placeholder
+// (the element that already stands in before he is warmed up) means the door
+// reveal still opens onto a composed stage rather than a hole.
+const heroCharFailed = ref(false)
+
 function onCharState(s: { ready: boolean; busy: boolean; pushing: boolean; active: string | null }) {
   charState.ready = s.ready
   charState.busy = s.busy
@@ -1779,8 +1795,29 @@ function setupPorRail(): (() => void) | null {
       }
     })
   }
+  // The frame above is a pure function of scroll position and layout: given the
+  // same scrollY it computes the same rect for every entry and toggles the same
+  // classes to the values they already hold. It was nevertheless being run 60
+  // times a second for as long as the rail was anywhere near the viewport —
+  // including the entire time a reader sits still and actually reads it, which
+  // for this section is most of the time it is on screen. Each of those frames
+  // walked every entry and every bullet with getBoundingClientRect, forcing a
+  // layout flush per tick to recompute a picture that had not changed.
+  //
+  // Watching scrollY costs one property read and skips all of it when nothing
+  // moved. `dirty` covers the cases where the geometry changes underneath a
+  // stationary scroll position — a resize, or the observer waking the loop.
+  let lastY = Number.NaN
+  let dirty = true
+  const invalidate = () => { dirty = true }
+  window.addEventListener('resize', invalidate)
   const loop = () => {
-    frame()
+    const y = window.scrollY
+    if (dirty || y !== lastY) {
+      dirty = false
+      lastY = y
+      frame()
+    }
     raf = requestAnimationFrame(loop)
   }
 
@@ -1789,7 +1826,8 @@ function setupPorRail(): (() => void) | null {
     (es) => {
       const en = es[es.length - 1]
       if (en.isIntersecting) {
-        if (raf == null) raf = requestAnimationFrame(loop)
+        // Geometry may have moved while the loop slept — force one frame.
+        if (raf == null) { dirty = true; raf = requestAnimationFrame(loop) }
       } else {
         if (raf != null) {
           cancelAnimationFrame(raf)
@@ -1806,6 +1844,7 @@ function setupPorRail(): (() => void) | null {
     alive = false
     if (raf != null) cancelAnimationFrame(raf)
     raf = null
+    window.removeEventListener('resize', invalidate)
     revealIO.disconnect()
     railIO.disconnect()
   }
@@ -2136,10 +2175,11 @@ onBeforeUnmount(() => {
                until their first potentially-visible pixel. -->
           <BeamsBackground class="cr-beams" intensity="subtle" :paused="doorProgressRef < 0.001" />
           <HeroCharacter
-            v-if="characterVisible || characterDoorRef"
+            v-if="(characterVisible || characterDoorRef) && !heroCharFailed"
             class="cr-character"
             :camera-zoom="1.25"
             :paused="doorProgressRef < 0.001"
+            @failed="heroCharFailed = true"
           />
           <div v-else class="cr-character-placeholder" aria-hidden="true"></div>
           <!-- Three scroll-scrubbed story states. Its own component so that
@@ -2302,10 +2342,14 @@ onBeforeUnmount(() => {
              component hides its internal text buttons. Non-staged (mobile /
              reduced motion): the component shows its own buttons. -->
         <div class="char-slot">
-          <SummaryCharacter v-if="summaryNear" ref="summaryCharRef" :show-actions="!sumStaged" @state="onCharState" @metrics="onCharMetrics" />
+          <SummaryCharacter v-if="summaryNear && !charFailed" ref="summaryCharRef" :show-actions="!sumStaged" @state="onCharState" @metrics="onCharMetrics" @failed="onCharFailed" />
         </div>
+        <!-- The panel drives the character's clips, so it is meaningless
+             without him. When the rig fails to load (see onCharFailed) it is
+             dropped rather than left sitting there permanently un-lit, which
+             read as a broken page rather than an absent decoration. -->
         <div
-          v-if="sumStaged"
+          v-if="sumStaged && !charFailed"
           class="summary-actions"
           :class="{ 'is-live': charState.ready }"
           aria-label="Character actions"

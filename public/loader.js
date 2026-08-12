@@ -18,9 +18,23 @@
   var docEl = document.documentElement;
   docEl.classList.add('agl-loading');
   var reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ── "the page behind this is ready to be seen" ──
+     This used to be the window 'load' event, which does not fire until every
+     image, font and font-face on the page has finished — including assets far
+     below the fold that the visitor will not reach for another twenty seconds.
+     The loading bar was capped at 93% until then, so the loader was pinned to
+     the slowest resource on the page rather than to the thing it is actually
+     covering: the hero being mounted and painted.
+
+     main.ts dispatches 'agl:ready' once the router has resolved the initial
+     route and Vue has mounted it. 'load' and a timeout stay as backstops, so a
+     bundle that fails to execute at all still lets the visitor through. */
   var loadFired = false;
-  addEventListener('load', function () { loadFired = true; });
-  setTimeout(function () { loadFired = true; }, 3500); /* failsafe */
+  var markReady = function () { loadFired = true; };
+  addEventListener('agl:ready', markReady, { once: true });
+  addEventListener('load', markReady);
+  setTimeout(markReady, 2200); /* failsafe */
 
   /* ── visitor count (resolves with number or null) ── */
   var cached = null;
@@ -28,7 +42,19 @@
   var countPromise = new Promise(function (resolve) {
     var done = false;
     var finish = function (v) { if (!done) { done = true; resolve(v); } };
-    setTimeout(function () { finish(cached); }, 2500);
+    /* Was 2500ms. This is a third-party host on the critical path of the first
+       thing anyone sees, and the odometer roll cannot even START until it
+       answers — so every millisecond here is spent twice. 1200ms is past the
+       p90 for the request and still leaves the cached value (or a dash) as a
+       perfectly good fallback.
+
+       When there IS a cached value the deadline is far shorter: 450ms is
+       enough for a warm connection to win, and past that a returning visitor
+       is better served by their last known number now than by the exact one a
+       second from now. The fetch below still runs to completion and still
+       writes localStorage, so the number they see next visit is current — it
+       just stops being something the page waits on. */
+    setTimeout(function () { finish(cached); }, cached ? 450 : 1200);
     try {
       fetch('https://abacus.jasoncameron.dev/' + (seen ? 'get' : 'hit') + '/adarsh-golait-portfolio/site-visits-v2')
         .then(function (r) { return r.json(); })
@@ -67,6 +93,12 @@
   }
 
   var REEL = '01234567890', MAXV = 999999;
+  /* Reel settle duration and per-column stagger. Must stay in step with the
+     `.agl-reel` transition in loader.css — the JS only needs to know when the
+     CSS is finished. Trimmed from 1100/70: the spin-down still reads as the
+     same cascade, it just doesn't linger. This pair, plus the count fetch it
+     waits on, was most of the loader's wall time. */
+  var REEL_MS = 760, REEL_STAGGER = 52;
   function ord(v) { var t = v % 100; if (t >= 11 && t <= 13) return 'th'; switch (v % 10) { case 1: return 'st'; case 2: return 'nd'; case 3: return 'rd'; default: return 'th'; } }
   function buildOdo(odo, n) {
     odo.innerHTML = '';
@@ -97,22 +129,28 @@
       col.classList.remove('agl-spin');
       reel.style.transform = 'translateY(0)';
       void reel.offsetHeight;
-      reel.style.transitionDelay = (i * 70) + 'ms';
+      reel.style.transitionDelay = (i * REEL_STAGGER) + 'ms';
       reel.style.transform = 'translateY(-' + d + 'em)';
     });
-    setTimeout(onDone, reduced ? 50 : 1100 + str.length * 70);
+    setTimeout(onDone, reduced ? 50 : REEL_MS + str.length * REEL_STAGGER);
   }
 
   function start() {
     var b = build(), el = b.el, veil = b.veil;
     var odo = el.querySelector('#aglOdo'), pctEl = el.querySelector('#aglPct'), fill = el.querySelector('#aglFill');
     var cols = buildOdo(odo, cached ? String(Math.min(cached, MAXV)).length : 3);
-    var t0 = performance.now(), MIN = reduced ? 600 : 1900;
+    /* Floor on how long the loader is allowed to hold the page. Was 1900ms,
+       which every visitor paid in full even when the site behind it had been
+       ready for a second. 800ms is still long enough to read the brand and see
+       the reels move, and on a fast connection the count now lands inside it. */
+    var t0 = performance.now(), MIN = reduced ? 500 : 800;
+    /* Hard ceiling. Nothing below may hold the page past this. */
+    var MAX = reduced ? 2600 : 4200;
     var rolled = false, rollDone = reduced, exited = false;
 
     countPromise.then(function (v) {
       /* let the reels spin a beat before settling */
-      var wait = Math.max(0, (reduced ? 0 : 700) - (performance.now() - t0));
+      var wait = Math.max(0, (reduced ? 0 : 280) - (performance.now() - t0));
       setTimeout(function () { rolled = true; settleOdo(odo, cols, v, function () { rollDone = true; }); }, wait);
     });
 
@@ -120,18 +158,42 @@
     function frame(now) {
       if (exited) return;
       var dt = Math.min(0.05, (now - last) / 1000); last = now;
+      var elapsed = now - t0;
+      /* Everything the loader is actually waiting for. Past this point the
+         page behind is mounted, the odometer has settled, and the floor has
+         been served — the only thing left is the bar catching up. */
+      var ready = loadFired && rollDone && elapsed >= MIN;
       var cap = loadFired ? 100.4 : 93;
-      p += (cap - p) * Math.min(1, dt * (reduced ? 12 : 2.6));
+      /* The bar approaches its cap exponentially, which never quite arrives:
+         at the old fixed rate of 2.6 it took 2.1 SECONDS to crawl the last
+         stretch and tick over to 100%. That made the bar's own easing curve
+         the slowest gate in the loader — slower than the network request,
+         slower than the app mounting, slower than the reels. It was holding
+         the page shut waiting for itself.
+
+         So once nothing real is outstanding, it stops easing and finishes.
+         Reads as a bar completing, which is what it is; before `ready` the
+         original creep is untouched. */
+      p += (cap - p) * Math.min(1, dt * (reduced ? 12 : ready ? 9 : 2.6));
       var shown = Math.min(100, Math.floor(p));
       pctEl.textContent = shown + '%';
       fill.style.transform = 'scaleX(' + shown / 100 + ')';
-      var elapsed = now - t0;
-      if (shown >= 100 && elapsed >= MIN && rollDone) { exit(el, veil); return; }
+      if (shown >= 100 && ready) { exit(el, veil); return; }
+      /* Deadline checked HERE, not in a setTimeout.
+         The old absolute failsafe was setTimeout(exit, 8000), and a timer
+         cannot fire while the main thread is blocked — which is exactly the
+         situation it existed to rescue. Measured on a throttled laptop the
+         hero's WebGL initialisation blocked long enough that the 8s failsafe
+         landed at 10.7s, and the visitor sat looking at a loading screen for
+         all of it. requestAnimationFrame callbacks are serviced as soon as the
+         thread frees up, so a deadline tested inside the frame loop actually
+         holds. The setTimeout below stays only for the case where rAF itself
+         is parked (background tab), where nobody is watching anyway. */
+      if (elapsed >= MAX) { exit(el, veil); return; }
       requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
-    /* absolute failsafe: never trap the visitor */
-    setTimeout(function () { exit(el, veil); }, 8000);
+    setTimeout(function () { exit(el, veil); }, MAX + 1500);
   }
 
   function exit(el, veil) {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from "vue";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { deviceTier, glInitSlot } from "../../perf/deviceTier";
 const cn = (...a: unknown[]) =>
   a.filter((v): v is string => typeof v === "string" && v.length > 0).join(" ");
 
@@ -90,6 +91,26 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 // (route change away from '/' leaks a whole running fluid sim per visit).
 let disposeSim: (() => void) | null = null;
 
+// Removes the pre-boot listeners below. Kept at component scope so unmount can
+// run it whether or not the sim ever got built.
+let bootCleanup: (() => void) | null = null;
+
+// Building the sim is by far the most expensive thing this page does: a WebGL2
+// context, ~30 extension/parameter round trips, 11 shader compiles and 9
+// program links — all synchronous, and all landing in the same tick as the
+// hero's four other drawing surfaces. Measured at 4x CPU throttle that block
+// alone was seconds of frozen main thread, during the loading screen, on every
+// visit.
+//
+// And it bought nothing, because the canvas is fully transparent until the
+// first pointer input — the note at the end of initSim has always said so, and
+// the loop deliberately does not start before then. Frames rendered before the
+// first mouse move are empty by construction.
+//
+// So mount now registers three cheap listeners and stops. The first real
+// pointer movement builds the sim, seeded at the position we saw it at, and
+// hands over to the sim's own listeners. Output is identical from the first
+// frame that could ever have shown anything.
 onMounted(() => {
   const canvas = canvasRef.value;
   if (!canvas) return;
@@ -99,6 +120,58 @@ onMounted(() => {
   // both for accessibility and because it's the heaviest always-on overlay.
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
 
+  let booted = false;
+  // The pre-boot listeners keep tracking the cursor while the sim is being
+  // built, and the sim is seeded from the LAST position rather than the first.
+  // Seeding from the first would leave the sim believing the pointer had
+  // teleported across everything traversed during the build, and its opening
+  // splat would be one long streak from there to wherever the cursor actually
+  // is. Seeded from the last, the first splat is an ordinary short one.
+  let lastX = 0;
+  let lastY = 0;
+  const boot = (x: number, y: number) => {
+    lastX = x;
+    lastY = y;
+    if (booted) return;
+    booted = true;
+    // Deferring the decision to first movement is what makes it a good one:
+    // by now the tier probe has watched the whole load window and can answer
+    // from measured frame times instead of a guess off navigator hints. A
+    // machine that spent that window dropping frames does not also get a
+    // full-screen fluid simulation composited over every other layer.
+    if (deviceTier() === "low") {
+      bootCleanup?.();
+      bootCleanup = null;
+      return;
+    }
+    void glInitSlot().then(() => {
+      bootCleanup?.();
+      bootCleanup = null;
+      // The route can change while we wait for a slot.
+      if (canvasRef.value !== canvas) return;
+      initSim(canvas, lastX, lastY);
+    });
+  };
+  const onBootMouse = (e: MouseEvent) => {
+    if (props.active) boot(e.clientX, e.clientY);
+  };
+  const onBootTouch = (e: TouchEvent) => {
+    const t = e.targetTouches[0];
+    if (t && props.active) boot(t.clientX, t.clientY);
+  };
+  window.addEventListener("mousemove", onBootMouse, { passive: true });
+  window.addEventListener("mousedown", onBootMouse, { passive: true });
+  window.addEventListener("touchstart", onBootTouch, { passive: true });
+  window.addEventListener("touchmove", onBootTouch, { passive: true });
+  bootCleanup = () => {
+    window.removeEventListener("mousemove", onBootMouse);
+    window.removeEventListener("mousedown", onBootMouse);
+    window.removeEventListener("touchstart", onBootTouch);
+    window.removeEventListener("touchmove", onBootTouch);
+  };
+});
+
+function initSim(canvas: HTMLCanvasElement, seedX: number, seedY: number) {
   // Pointer and config setup
   const pointers: Pointer[] = [pointerPrototype()];
 
@@ -1400,30 +1473,44 @@ onMounted(() => {
   };
   window.addEventListener("touchend", onTouchEnd);
   // ------------------------------------------------------------
-  // Add watchers for prop changes
-  watch(
-    () => props.simResolution,
-    (newVal) => {
-      config.SIM_RESOLUTION = newVal;
-      initFramebuffers();
-    },
-  );
+  // Add watchers for prop changes.
+  //
+  // These used to sit inside onMounted, where Vue binds them to the component
+  // instance and tears them down for you. initSim now runs from a pointer
+  // handler, long after that context is gone, so they would outlive the
+  // component — hold the stop handles and retire them in disposeSim.
+  const stopWatchers = [
+    watch(
+      () => props.simResolution,
+      (newVal) => {
+        config.SIM_RESOLUTION = newVal;
+        initFramebuffers();
+      },
+    ),
+    watch(
+      () => props.dyeResolution,
+      (newVal) => {
+        config.DYE_RESOLUTION = newVal;
+        initFramebuffers();
+      },
+    ),
+    watch(
+      () => props.shading,
+      (newVal) => {
+        config.SHADING = newVal;
+        updateKeywords();
+      },
+    ),
+  ];
 
-  watch(
-    () => props.dyeResolution,
-    (newVal) => {
-      config.DYE_RESOLUTION = newVal;
-      initFramebuffers();
-    },
-  );
-
-  watch(
-    () => props.shading,
-    (newVal) => {
-      config.SHADING = newVal;
-      updateKeywords();
-    },
-  );
+  // Seed the pointer where the cursor actually is, without splatting.
+  // updatePointerDownData sets texcoord and prevTexcoord to the same point
+  // with zero delta — exactly the state the sim would have been in had it been
+  // running all along and the pointer just arrived — and the paired Up call
+  // clears the `down` flag so no click splat is implied. The next real move
+  // then produces an ordinary short delta.
+  updatePointerDownData(pointers[0], -1, scaleByPixelRatio(seedX), scaleByPixelRatio(seedY));
+  updatePointerUpData(pointers[0]);
 
   // No eager loop start: the canvas is fully transparent until the first
   // pointer event, so rendering before then produces identical (empty)
@@ -1434,6 +1521,7 @@ onMounted(() => {
     rafId = null;
     // Park the idle clock so a queued frame can't reschedule.
     lastInteraction = 0;
+    stopWatchers.forEach((stop) => stop());
     window.removeEventListener("mousedown", onMouseDown);
     window.removeEventListener("mousemove", onMouseMove);
     window.removeEventListener("touchstart", onTouchStart);
@@ -1441,9 +1529,11 @@ onMounted(() => {
     window.removeEventListener("touchend", onTouchEnd);
     gl.getExtension("WEBGL_lose_context")?.loseContext();
   };
-});
+}
 
 onBeforeUnmount(() => {
+  bootCleanup?.();
+  bootCleanup = null;
   disposeSim?.();
   disposeSim = null;
 });

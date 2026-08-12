@@ -32,7 +32,8 @@ html.agl-loading::before { content: ''; position: fixed; inset: 0; background: #
 .agl-mid::after { content: ''; position: absolute; inset: clamp(1.1rem, 3.2vh, 2rem) clamp(1.1rem, 3.2vw, 2rem); pointer-events: none; color: rgba(9,9,11,0.32); background: linear-gradient(to right, currentColor 14px, transparent 14px) top left / 14px 1px no-repeat, linear-gradient(to bottom, currentColor 14px, transparent 14px) top left / 1px 14px no-repeat, linear-gradient(to left, currentColor 14px, transparent 14px) top right / 14px 1px no-repeat, linear-gradient(to bottom, currentColor 14px, transparent 14px) top right / 1px 14px no-repeat, linear-gradient(to right, currentColor 14px, transparent 14px) bottom left / 14px 1px no-repeat, linear-gradient(to top, currentColor 14px, transparent 14px) bottom left / 1px 14px no-repeat, linear-gradient(to left, currentColor 14px, transparent 14px) bottom right / 14px 1px no-repeat, linear-gradient(to top, currentColor 14px, transparent 14px) bottom right / 1px 14px no-repeat; }
 .agl-odo { display: flex; align-items: flex-start; font: 900 clamp(3.2rem, 11vw, 8.5rem)/1 'Inter', sans-serif; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
 .agl-col { display: block; height: 1em; overflow: hidden; }
-.agl-reel { display: flex; flex-direction: column; transition: transform 1.1s cubic-bezier(0.16, 1, 0.3, 1); }
+/* Duration is mirrored by REEL_MS in loader.js — change both together. */
+.agl-reel { display: flex; flex-direction: column; transition: transform 0.76s cubic-bezier(0.16, 1, 0.3, 1); }
 .agl-reel span { display: block; height: 1em; line-height: 1; }
 .agl-col.agl-spin .agl-reel { transition: none; animation: aglSpin 0.9s linear infinite; }
 @keyframes aglSpin { to { transform: translateY(-10em); } }
