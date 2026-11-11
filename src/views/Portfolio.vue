@@ -3246,8 +3246,20 @@ main > section.section {
        and every phone is untouched; above it the frame keeps growing, just
        on a gentler slope, easing to ~49% of the screen by 1024px — close to
        the 44% the wide desktop frame settles at. Smooth all the way: no
-       width gets a visibly different treatment from the one next to it. */
-    height: min(calc(100% - 1.25rem), calc(min(68vw, 30vw + 190px) * 4 / 3));
+       width gets a visibly different treatment from the one next to it.
+
+       The /1.17 on the height term reserves the signature's run-out. The
+       plate is not the only thing in this stage: the mark is scrawled past
+       its bottom edge on purpose (see the .im-signature rules), and the
+       painted tail reaches 8.5% of the plate's height below it. Bare
+       `100% - 1.25rem` leaves 10px there, so on any viewport short enough
+       for the height term to govern — 320x568, 360x640, 375x667, 500x800 —
+       the descender landed across the first line of the caption.
+       Centred in the row, room below is (stage - H)/2, so H <= (stage -
+       2*margin) / (1 + 2*0.0847) keeps a 10px gap; 1.17 is that divisor.
+       It only ever bites where the height term was already the smaller of
+       the two, so nothing that fits today changes size. */
+    height: min(calc((100% - 1.25rem) / 1.17), calc(min(68vw, 30vw + 190px) * 4 / 3));
     width: auto;
     aspect-ratio: 3/4;
   }
@@ -3441,11 +3453,57 @@ main > section.section {
     transform: translate(5%, calc(-50% + 2.7%));
   }
 }
+/* ── portrait slot: scale the mark to the HEAD, not to the plate ──
+   Centring the ink on the frame (above) is geometrically correct and still
+   looked wrong, because size and anchor were both measured against the wrong
+   thing. The frame changes shape between stages — 24:14 on a desktop,
+   3:4 here — so "a fraction of the plate" means something different on each,
+   while the thing the signature is actually scrawled across, the man's head,
+   does not change at all.
+
+   Measured on the landed plate, the desktop mark is 1.21x the head's width
+   and its centre sits 0.90 of a head-height below the crown: the loop rings
+   the head with air to spare and the descender runs out past the bottom edge
+   of the plate. At 0.72 of the slot width the phone was getting 0.73x the
+   head, centred on the mouth — a third the presence, contained tidily inside
+   the frame, reading as a sticker placed on the face rather than a mark
+   drawn over the portrait. That is the "misaligned" in the bug report: the
+   origin was right and the composition was not.
+
+   Both quantities are constants here, because the compact crop pins them:
+   applyHeroTransform frames the head at COMPACT_HEAD_W_FRAC (0.78) of the
+   plate width with COMPACT_CROWN_HEADROOM (0.10) of air above the crown, at
+   a fixed 3:4, so head width is always 0.78*slot-w and head height always
+   0.577*slot-h, on every compact viewport from a 320px handset to an upright
+   tablet. Change either of those two levers and re-derive these.
+
+     width  1.21 * 0.78 = 0.943 of slot-w of INK; the ink bbox is 0.862 of
+            the svg box, hence 0.943 / 0.862 / 0.92(--sig-scale) = 1.19.
+     offset crown(0.10) + 0.897 * head(0.577) = 0.617 of slot-h from the
+            plate top, i.e. +0.117 slot-h past the frame centre the anchor
+            already gives us. As a share of the svg's own height (which is
+            now 1.416 * slot-w) that is +11.05%, so it tracks the mark
+            instead of needing the slot height passed in again.
+
+   The horizontal half of the desktop bias (+0.16 head-widths right, a
+   leftover of its `padding-left`) is deliberately NOT carried over. It is
+   invisible where the ink is half the plate's width; at 94% of it the mark
+   would hang off the right edge with a gap on the left. */
+@media (min-height: 501px) and (max-width: 720px),
+       (min-height: 501px) and (max-aspect-ratio: 4/5) {
+  .im-signature :deep(svg) {
+    width: calc(var(--hs-slot-w, min(55vw, 260px)) * 1.19 * var(--sig-scale));
+    transform: translate(5%, calc(-50% + 13.75%));
+  }
+}
 /* Landscape handset: the frame is now height-driven (3:2, ~160px tall), and
    a signature sized off the frame's WIDTH came out 11% taller than the frame
    itself — the loop ran up into the .im-top bar. Size it off the measured
    frame height here instead; 0.58 reproduces the proportion the wide desktop
-   stage uses, which is the same landscape situation. */
+   stage uses, which is the same landscape situation. This stage takes the
+   WIDE slot and the desktop crop path, so none of the portrait-slot
+   constants above apply to it — hence the separate query rather than one
+   shared rule. */
 @media (max-height: 500px) {
   .im-signature :deep(svg) {
     width: calc(var(--hs-slot-h, 160px) * 0.773 * 1.13 * var(--sig-scale));
