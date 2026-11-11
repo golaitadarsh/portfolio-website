@@ -9,6 +9,7 @@ import PorPhotoWall from '../components/portfolio/PorPhotoWall.vue'
 import type { WallPhoto } from '../components/portfolio/PorPhotoWall.vue'
 import TimedCards from '../components/portfolio/TimedCards.vue'
 import { useMobileNav } from '../composables/useMobileNav'
+import { heroSubjectBox, isCompactViewport } from '../heroFraming'
 import { hasWebGL2 } from '../perf/webgl'
 import signatureSvgRaw from '../../assets/signature.svg?raw'
 // Framer Motion's keyframe interpolator, via Motion for Vue. Pure function —
@@ -183,19 +184,24 @@ if (finePointerMq) onFinePointer(finePointerMq)
 //   smoothing     · 0..1, lerp factor per frame; smaller = silkier (slower catchup).
 // ────────────────────────────────────────────────────────────────────
 // Slot aspect for landed Page-1. Landscape on desktop; portrait on compact
-// (phone) viewports, where a landscape crop of the portrait hero photo
-// reduces to an eye-strip. Must match the .im-frame aspect-ratio media query.
+// viewports, where a landscape crop of the portrait hero render reduces to an
+// eye-strip. `isCompactViewport` lives in ../heroFraming (it is shape-based,
+// not width-based — see COMPACT_MEDIA there) and MUST stay in step with the
+// .im-frame aspect-ratio media query below.
 const HERO_SLOT_AR_WIDE    = 24 / 14
 const HERO_SLOT_AR_COMPACT = 3 / 4
-
-function isCompactViewport() {
-  return typeof window !== 'undefined' &&
-    window.matchMedia('(max-width: 720px)').matches
-}
 
 function heroSlotAR() {
   return isCompactViewport() ? HERO_SLOT_AR_COMPACT : HERO_SLOT_AR_WIDE
 }
+
+// ── compact landing frame ──
+// How the head should sit inside the portrait slot. Only consulted on compact
+// viewports; the wide slot keeps running on heroZoom.characterSize / cropY.
+//   HEAD_W_FRAC    head width ÷ plate width.
+//   CROWN_HEADROOM air above the hair ÷ plate height.
+const COMPACT_HEAD_W_FRAC   = 0.78
+const COMPACT_CROWN_HEADROOM = 0.10
 
 // ────────────────────────────────────────────────────────────────────
 // LEVERS — tweak these to change everything about the hero zoom feel.
@@ -506,7 +512,19 @@ function measureHeroSlot() {
   // and on phones the frame is sized from the stage's leftover height — so a
   // vw-based signature drifts from 80% of the portrait to 100% of it as the
   // browser chrome shows and hides. One write per measure, not per frame.
+  //
+  // --hs-slot-cy is the frame's CENTRE, measured from the top of the sticky
+  // stage. The signature box is `inset: 0` on #intro-message, so it centres
+  // on the whole stage — but the frame centres inside .im-stage, the row
+  // between .im-top and .im-foot. On desktop .im-foot is absolutely
+  // positioned so those two centres nearly coincide and the drift is
+  // invisible. On a phone the foot is in flow (see the .hs-page2 rules), so
+  // .im-stage is a short box high up the screen and the signature landed
+  // ~75px below the portrait it is supposed to be scrawled across — hanging
+  // off the bottom edge of the plate. Anchor it to the real frame instead.
   sticky.style.setProperty('--hs-slot-w', `${Math.round(sRect.width)}px`)
+  sticky.style.setProperty('--hs-slot-h', `${Math.round(sRect.height)}px`)
+  sticky.style.setProperty('--hs-slot-cy', `${Math.round(heroSlotRect.y + sRect.height / 2)}px`)
   applyHeroTransform(true)
 }
 
@@ -528,19 +546,47 @@ function applyHeroTransform(force = false) {
 
   const slotW = heroSlotRect.w * heroZoom.sizeScale
 
-  // visibleW/H = the trimmed window that lands exactly inside the slot.
-  // Dividing by characterSize > 1 enlarges the character at landing (smaller
-  // visible source × larger scale = bigger image inside the slot). On compact
-  // viewports the source render is already a tight portrait crop, so the
-  // desktop zoom factor over-magnifies — keep it near 1 there.
-  const charSize = isCompactViewport() ? 1.05 : heroZoom.characterSize
-  const visibleW = cropW / charSize
-  const visibleH = cropH / charSize
+  // visibleW/H = the trimmed window that lands exactly inside the slot, and
+  // cropOffX/Y is where that window sits in the hero viewport.
+  let visibleW: number
+  let visibleH: number
+  let cropOffX: number
+  let cropOffY: number
+
+  if (isCompactViewport()) {
+    // Portrait slot: frame the SUBJECT, not a fraction of the viewport.
+    //
+    // The old compact path divided the viewport by a flat 1.05 and placed the
+    // window at 47% of the leftover height — numbers fitted by eye against a
+    // hero render where the face filled the whole screen, so any window was
+    // full of face. Once the hero gained its portrait cap the figure moved
+    // down and shrank, and those same numbers started catching the empty
+    // space above the head: the landed plate grew a dead grey band across its
+    // top half with the chin clipped off the bottom.
+    //
+    // Ask the shared framing module where the head actually is instead. This
+    // is now correct for any hero framing, and for any viewport shape.
+    const sub = heroSubjectBox(heroVpW, heroVpH)
+    visibleW = sub.headW / COMPACT_HEAD_W_FRAC
+    visibleH = visibleW / targetAR
+    // Never sample outside the hero — past that the shader is clamping edge
+    // pixels and the plate would land with a smear down one side.
+    if (visibleW > heroVpW) { visibleW = heroVpW; visibleH = visibleW / targetAR }
+    if (visibleH > heroVpH) { visibleH = heroVpH; visibleW = visibleH * targetAR }
+    const clamp = (v: number, hi: number) => Math.max(0, Math.min(hi, v))
+    cropOffX = clamp(sub.headCX - visibleW / 2, heroVpW - visibleW)
+    cropOffY = clamp(sub.crownY - visibleH * COMPACT_CROWN_HEADROOM, heroVpH - visibleH)
+  } else {
+    // Wide slot — unchanged. Dividing by characterSize > 1 enlarges the
+    // character at landing (smaller visible source × larger scale = bigger
+    // image inside the slot).
+    visibleW = cropW / heroZoom.characterSize
+    visibleH = cropH / heroZoom.characterSize
+    cropOffX = (heroVpW - visibleW) * heroZoom.cropX
+    cropOffY = (heroVpH - visibleH) * heroZoom.cropY
+  }
 
   const scaleEnd = slotW / visibleW
-
-  const cropOffX = (heroVpW - visibleW) * heroZoom.cropX
-  const cropOffY = (heroVpH - visibleH) * heroZoom.cropY
 
   const slotCenterX = heroSlotRect.x + heroSlotRect.w / 2 + heroZoom.offsetX
   const slotCenterY = heroSlotRect.y + heroSlotRect.h / 2 + heroZoom.offsetY
@@ -1940,7 +1986,6 @@ function setupReveal(): (() => void) | null {
     ['.edu-strip .cell', 'rv', 0.07],
     ['.skill-group .h', 'rv-left', 0],
     ['.skill-group .skill-tag', 'rv-pop', 0.025],
-    ['.footer h2', 'rv-left', 0],
     ['.footer .links a', 'rv-fade', 0.07],
     ['.footer .colophon', 'rv-fade', 0],
   ]
@@ -2332,8 +2377,7 @@ onBeforeUnmount(() => {
 
       <footer class="im-foot">
         <p class="caption">
-          <strong>Mechanical engineer.</strong> Operations &amp; program build, hands-on.<br />
-          Mumbai · open to business operations &amp; strategy on the supplier side of a hardware ecosystem.
+          <strong>Mechanical engineer.</strong> Operations &amp; program build, hands-on.
         </p>
         <a href="#summary" class="scroll-down" aria-label="Scroll to the next section">
           <span>Keep scrolling</span>
@@ -2852,7 +2896,6 @@ onBeforeUnmount(() => {
 
   <footer id="contact" class="footer">
     <div class="footer-grid">
-      <h2>Open to <em>Business Operations &amp; Strategy</em> on the supplier side of a Hardware ecosystem.</h2>
       <div class="links">
         <a href="mailto:golaitadarsh@gmail.com">
           <span class="k">Email</span>
@@ -3154,6 +3197,17 @@ main > section.section {
   height: 100%;
   min-height: 0;
   display: grid;
+  /* Pin the single row to the stage. Left implicit it is an `auto` row, and
+     an auto row GROWS to fit an oversized item — which quietly defeated
+     .im-frame's `height: min(calc(100% - 1.25rem), …)` guard, because that
+     percentage resolves against the row, not against this box. On a short
+     stage the frame would overflow, the row would grow to match, and the
+     100% would then measure the grown row: the guard chased its own tail
+     and never bound. At 320x516 the stage was 214px, the row 328px, and the
+     frame sat 95px past the bottom of its own container, on the caption.
+     minmax(0, 1fr) makes the row exactly this element's height and lets it
+     shrink below content, so the percentage finally means what it reads. */
+  grid-template-rows: minmax(0, 1fr);
   place-items: center;
 }
 .im-frame {
@@ -3162,19 +3216,55 @@ main > section.section {
   aspect-ratio: 3/2;
   z-index: 4;
 }
-@media (max-width: 720px) {
-  /* Portrait frame on phones — must stay in sync with HERO_SLOT_AR_COMPACT
-     in the script, which drives the matching page-1 crop.
-     HEIGHT-first, not width-first: a width-driven 3:4 box is 364px tall at
-     402px wide, and the stage between .im-top and .im-foot is only ~275px on
-     a phone once Safari's chrome is showing (100svh ≈ 700). The frame then
-     overflowed downward and the landed portrait sat on top of the caption.
-     Sizing from the stage height keeps the ratio exact (so the page-1 crop
-     still matches) and guarantees the frame can never outgrow its row. */
+/* Portrait frame on compact viewports — the condition MUST stay
+   character-identical to COMPACT_MEDIA in ../heroFraming, which drives the
+   matching page-1 crop. Shape, not width: a 768x1024 tablet is wide enough
+   to miss a 720px query but far too tall to hold a 24:14 slot, and it was
+   landing a strip of eyes where the portrait should be.
+   HEIGHT-first, not width-first: a width-driven 3:4 box is 364px tall at
+   402px wide, and the stage between .im-top and .im-foot is only ~275px on
+   a phone once Safari's chrome is showing (100svh ≈ 700). The frame then
+   overflowed downward and the landed portrait sat on top of the caption.
+   Sizing from the stage height keeps the ratio exact (so the page-1 crop
+   still matches) and guarantees the frame can never outgrow its row. */
+@media (min-height: 501px) and (max-width: 720px),
+       (min-height: 501px) and (max-aspect-ratio: 4/5) {
   .im-frame {
-    height: min(calc(100% - 1.25rem), calc(min(68vw, 320px) * 4 / 3));
+    /* Largest 3:4 box that fits BOTH the row's height and a share of its
+       width. Two terms, both continuous — there is no device breakpoint in
+       here and there must not be one: this branch spans everything from a
+       320px handset to a 1024px tablet held upright.
+
+       The width term used to be `min(68vw, 320px)`. That hard cap stopped
+       the frame growing at ~470px wide, so every viewport above it got the
+       same 320px plate in an ever-emptier stage — 57% of the screen at
+       560px, 50% at 640, 44% at 720, where it read as a stamp marooned in
+       the middle of the page rather than a framed portrait.
+
+       `min(68vw, 30vw + 190px)` is the same idea without the cliff. The two
+       lines cross at exactly 500px of viewport, so below that 68vw governs
+       and every phone is untouched; above it the frame keeps growing, just
+       on a gentler slope, easing to ~49% of the screen by 1024px — close to
+       the 44% the wide desktop frame settles at. Smooth all the way: no
+       width gets a visibly different treatment from the one next to it. */
+    height: min(calc(100% - 1.25rem), calc(min(68vw, 30vw + 190px) * 4 / 3));
     width: auto;
     aspect-ratio: 3/4;
+  }
+}
+/* Short viewport — a handset in landscape, either orientation of narrow.
+   The stage between .im-top and .im-foot is only ~170px tall here, so the
+   width-driven desktop frame (360px min, 3:2 → 240px tall) could not fit and
+   was squeezed by the grid into whatever was left, landing under the foot
+   copy; a 667x375 handset was worse still, taking the portrait branch on
+   width and overflowing the stage outright. Drive it from the row height,
+   same as the portrait case. Matches the min-height: 501px bound in
+   COMPACT_MEDIA, so JS keeps the WIDE slot aspect in step with this frame. */
+@media (max-height: 500px) {
+  .im-frame {
+    height: min(calc(100% - 0.75rem), 220px);
+    width: auto;
+    aspect-ratio: 3/2;
   }
 }
 .im-frame :deep(.slot) {
@@ -3306,18 +3396,59 @@ main > section.section {
 .im-signature :deep(svg path.sig-stroke) {
   stroke-width: 15;
 }
-@media (max-width: 720px) {
-  /* Centre the signature over the portrait frame — the desktop left/top
-     padding bias pushes it off the smaller mobile slot. */
+/* ── signature on anything that is not a wide desktop stage ──
+   Two separate faults lived here, and both show up as "the signature is the
+   wrong size and in the wrong place".
+
+   POSITION. The box is `inset: 0` on #intro-message and centres its grid
+   item, so it targets the centre of the STAGE. The portrait centres inside
+   .im-stage — the row between .im-top and .im-foot. Those two centres only
+   coincide while .im-foot is absolutely positioned, which it is on desktop
+   and is NOT on the compact stage (see the .hs-page2 rules, where the foot
+   is in flow so it can't overlap the frame). The gap ran to ~75px: the
+   signature sat below the portrait with its tail hanging off the plate
+   instead of scrawled across the face. Pin to the measured frame centre
+   (--hs-slot-cy, written by measureHeroSlot) and drop the padding bias that
+   was a partial manual correction for the same drift. A zero-height grid
+   box centres its overflowing item on its own top edge, which is exactly
+   the anchor we want.
+
+   SIZE. 0.86 of the slot width was set against the WIDE slot. Against the
+   portrait slot — barely a third as wide — it made a mark nearly as wide as
+   the plate, which is why it burst the frame on every phone. 0.72 keeps it
+   reading as scrawled-across while staying inside the glow's own margin. */
+@media (max-width: 720px), (max-aspect-ratio: 4/5), (max-height: 500px) {
   .im-signature {
     padding-left: 0;
-    padding-top: clamp(1.5rem, 6vh, 4rem);
+    padding-top: 0;
+    inset: auto 0 auto 0;
+    top: var(--hs-slot-cy, 50%);
+    height: 0;
   }
   .im-signature :deep(svg) {
-    /* Tied to the measured slot, not the viewport: keeps the same scrawl-over
-       -the-portrait proportion whether the frame is 273px tall or squeezed to
-       226 by Safari's chrome. Falls back to the old vw ramp pre-measure. */
-    width: calc(var(--hs-slot-w, min(55vw, 260px)) * 0.86 * var(--sig-scale));
+    /* Tied to the measured slot, not the viewport: keeps the same proportion
+       whether the frame is 273px tall or squeezed to 226 by Safari's chrome.
+       Falls back to the old vw ramp pre-measure. */
+    width: calc(var(--hs-slot-w, min(55vw, 260px)) * 0.72 * var(--sig-scale));
+    /* The grid row above is auto-sized, so `place-items: center` centres the
+       svg within a row as tall as the svg — which, on a zero-height
+       container, lands its TOP on the anchor rather than its middle. Pull it
+       up by half its own height explicitly.
+       The two small percentages re-centre the INK rather than the box: the
+       drawn mark is not centred inside the 612x792 viewBox (bbox x 11.4
+       w 527.3, y 33.8 h 681.6), so centring the element box left the visible
+       signature 9px left and 6px high of the portrait it is scrawled on. */
+    transform: translate(5%, calc(-50% + 2.7%));
+  }
+}
+/* Landscape handset: the frame is now height-driven (3:2, ~160px tall), and
+   a signature sized off the frame's WIDTH came out 11% taller than the frame
+   itself — the loop ran up into the .im-top bar. Size it off the measured
+   frame height here instead; 0.58 reproduces the proportion the wide desktop
+   stage uses, which is the same landscape situation. */
+@media (max-height: 500px) {
+  .im-signature :deep(svg) {
+    width: calc(var(--hs-slot-h, 160px) * 0.773 * 1.13 * var(--sig-scale));
   }
 }
 
@@ -4420,25 +4551,19 @@ main > section.section {
 }
 .footer .footer-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: clamp(2rem, 5vw, 5rem);
   align-items: end;
 }
-@media (max-width: 880px) { .footer .footer-grid { grid-template-columns: 1fr; align-items: start; gap: 2rem; } }
-.footer h2 {
-  font: 900 clamp(2.4rem, 6vw, 5rem)/0.9 var(--f-sans);
-  letter-spacing: -0.04em;
-  text-transform: uppercase;
-  max-width: 14ch;
-}
-.footer h2 em { font-style: normal; color: var(--accent); }
+@media (max-width: 880px) { .footer .footer-grid { align-items: start; gap: 2rem; } }
 .footer .links {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
   background: rgba(255,255,255,0.18);
   border: 1px solid rgba(255,255,255,0.18);
 }
+@media (max-width: 880px) { .footer .links { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 520px) { .footer .links { grid-template-columns: 1fr; } }
 .footer .links a {
   background: var(--ink);
@@ -5289,5 +5414,53 @@ main > section.section {
 }
 @media print {
   .rv { opacity: 1 !important; transform: none !important; }
+}
+
+/* ════════════════════════════════════════════════════════════
+   PHONE LEGIBILITY FLOOR
+   ════════════════════════════════════════════════════════════
+   The mono micro-labels are sized for a desktop viewing distance, where
+   0.58–0.62rem (9.3–9.9px) reads as a deliberate caption. Held at arm's
+   length on a phone the same strings fall under the ~11px floor and stop
+   being readable at all — an audit across this page found thirty-odd of
+   them, which is most of the reason the page "looks wrong" on a handset
+   even though nothing is broken.
+
+   Deliberately a font-size-only block at the end of the sheet: every rule
+   here is a same-property override of a declaration above it, so the
+   desktop cascade is untouched by construction and the diff is auditable.
+   Tracking stays as authored — these are 0.1–0.24em letter-spaced labels
+   and re-tracking them would change the lockups, not just the size.
+   ════════════════════════════════════════════════════════════ */
+@media (max-width: 720px) {
+  .im-foot .scroll-down span { font-size: 0.68rem; }
+  .im-foot .timestamp        { font-size: 0.68rem; }
+  .sum-act-hint              { font-size: 0.68rem; }
+  .sum-act-label             { font-size: 0.66rem; }
+  #por .bix                  { font-size: 0.72rem; }
+  .edu-strip .k              { font-size: 0.68rem; }
+  .footer .links .k          { font-size: 0.66rem; }
+  .footer .colophon          { font-size: 0.68rem; }
+  #experience .xp-prog-meta  { font-size: 0.68rem; }
+  #experience .xp-co-num     { font-size: 0.68rem; }
+  #experience .xp-badge      { font-size: 0.7rem; }
+  #experience .xp-datelines .promo { font-size: 0.68rem; }
+  #experience .xp-stats .k   { font-size: 0.68rem; }
+
+  /* Body copy. 0.92rem (14.7px) is below the comfortable phone floor; the
+     rail reclaim below pays for the extra characters this costs per line. */
+  .bullets li { font-size: 0.95rem; }
+
+  /* ─── reclaim the rail gutter ───
+     At 375px usable the PoR column spent 24px (page gutter) + 38px
+     (--railpad floor) + 24px (bullet indent) before the first glyph: 23% of
+     the screen, leaving a 265px measure that wrapped body copy at ~33
+     characters and read as ragged. The rail is decoration — it does not
+     need a desktop-width standoff on a phone. .nd pins itself to the rail
+     with `left: calc(7px - var(--railpad))`, so narrowing the pad carries
+     the node dots along with it and the alignment holds. */
+  #por .rail-wrap { --railpad: 1.6rem; }
+  #por .bullets li { padding-left: 1.1rem; }
+  #por .bullets li::before { width: 10px; }
 }
 </style>

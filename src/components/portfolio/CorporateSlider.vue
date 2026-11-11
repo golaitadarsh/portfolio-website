@@ -1368,4 +1368,17 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
   .cs-card { width: min(88%, 300px); min-height: 240px; }
   .cs-viz { max-width: min(100%, 150px); }
 }
+
+/* ── phone legibility floor ──
+   Mono labels authored for desktop viewing distance. .cs-chip at 0.55rem is
+   8.8px — the three evidence chips under each metric are the card's proof,
+   and they were the smallest type in the section. Size only; the tracking
+   is what gives these their label shape. */
+@media (max-width: 720px) {
+  .cs-chip     { font-size: 0.66rem; }
+  .cs-eyebrow  { font-size: 0.7rem; }
+  .cs-kicker   { font-size: 0.7rem; }
+  .cs-card-top { font-size: 0.68rem; letter-spacing: 0.16em; }
+  .cs-card.cs-card-photo .cs-photo-label { font-size: 0.7rem; }
+}
 </style>

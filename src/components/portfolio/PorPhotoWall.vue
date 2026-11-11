@@ -164,7 +164,11 @@ onBeforeUnmount(() => {
     </div>
     <p class="wg-hint" :class="{ on: assembled }">
       <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.6" /><path d="M10.4 10.4 14 14" /><path d="M5.2 7h3.6" /><path v-if="!assembled" d="M7 5.2v3.6" /></svg>
-      {{ assembled ? 'Click the photo to return to the grid' : 'Click any frame to open it across the wall' }}
+      <!-- "Click" is the wrong verb on the device most likely to read this.
+           Two spans rather than a JS pointer check: a media query answers at
+           paint time and can't disagree with the device mid-session. -->
+      <span class="wg-verb wg-verb--fine">{{ assembled ? 'Click the photo to return to the grid' : 'Click any frame to open it across the wall' }}</span>
+      <span class="wg-verb wg-verb--coarse">{{ assembled ? 'Tap the photo to return to the grid' : 'Tap a frame to open it across the wall' }}</span>
     </p>
   </div>
 </template>
@@ -322,5 +326,28 @@ onBeforeUnmount(() => {
   .wg-part { transition: none; }
   .wg-front.has-photo { transition: filter 0.25s ease, box-shadow 0.25s ease; }
   .wg-part.show-front:hover .wg-front.has-photo { transform: none; }
+}
+
+/* ── touch copy ── */
+.wg-verb--coarse { display: none; }
+@media (pointer: coarse) {
+  .wg-verb--fine   { display: none; }
+  .wg-verb--coarse { display: inline; }
+}
+
+/* ── phone ──
+   A 4:3 wall at phone width gives ~95px cells. The per-cell index and
+   caption were authored for a desktop cell more than twice that: at 8px
+   the captions truncate to "CONVOCATION 2…", "TREE PLANTATI…" — noise
+   that reads as a rendering fault rather than a label. Drop them and let
+   the wall be the mosaic it is; the caption a reader actually needs is
+   .wg-tag, which appears on the assembled photo after a tap, so nothing
+   becomes unlabelled — it just stops being labelled nine times at once. */
+@media (max-width: 720px) {
+  .wg-front .wg-ix,
+  .wg-front .wg-lb { display: none; }
+  .wg-tag  { font-size: 0.66rem; letter-spacing: 0.1em; padding: 6px 8px 7px; }
+  .wg-hint { font-size: 0.66rem; letter-spacing: 0.1em; gap: 7px; margin-top: 10px; }
+  .wg-hint svg { width: 14px; height: 14px; }
 }
 </style>

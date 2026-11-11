@@ -438,6 +438,15 @@ onBeforeUnmount(() => {
   .split { grid-template-columns: 1fr; }
   .yr-group { grid-template-columns: 1fr; gap: 0.75rem; }
   .yr-role { flex-direction: column; align-items: flex-start; gap: 0.2rem; }
+
+  /* Same rail reclaim as the PoR section on the home route (this page
+     carries a copy of that treatment). The --railpad floor of 2.4rem plus
+     the 1.5rem bullet indent spent 23% of a 375px screen before the first
+     glyph. .nd pins to the rail via `left: calc(7px - var(--railpad))`, so
+     narrowing the pad carries the node dots with it. */
+  .rail-wrap { --railpad: 1.6rem; }
+  .bullets li { padding-left: 1.1rem; }
+  .bullets li::before { width: 10px; }
 }
 
 /* ── motion: hidden pre-states only when JS mounted (.anim) + motion allowed,

@@ -9,6 +9,7 @@ import basePhotoUrl     from '../assets/base-photo.webp?url'
 import layeredPhotoUrl  from '../assets/layered-photo.webp?url'
 import { deviceTier, tuneRenderer } from './perf/deviceTier'
 import { hasWebGL2 } from './perf/webgl'
+import { BASE_ASP, LAYERED_ASP, SUBJECT, heroFitUV } from './heroFraming'
 
 const DotField = defineAsyncComponent(() => import('./components/dot-field/DotField.vue'))
 
@@ -48,10 +49,6 @@ const container = ref<HTMLElement | null>(null)
 // static base photo instead of letting the mounted hook throw, which would
 // abort route navigation and blank the page.
 const webglFailed = ref(false)
-
-// Image aspect ratios for cover-fit
-const BASE_ASP    = 1277 / 878
-const LAYERED_ASP = 1512 / 1040
 
 const SIM_RES = 128
 
@@ -230,21 +227,14 @@ onMounted(() => {
   const daScene = makeScene(dyeAdvMat)
 
   // ── cover-fit math ────────────────────────────────────────────────────────
-  const PHOTO_H_FRAC    = 0.92
-  const TARGET_EYE_Y    = 0.72
-  const BASE_EYE_UV     = 1 - 0.149
+  // The fit itself lives in ../heroFraming — Portfolio.vue's page-2 crop has
+  // to know where this puts the subject, and the two drifting apart is what
+  // put a dead grey band above the head in the landed slot.
+  const BASE_EYE_UV     = 1 - SUBJECT.eyeY
   const LAYERED_EYE_UV  = 0.81
   const BASE_X_NUDGE    = 0
   const LAYERED_X_NUDGE = -0.005
-  function fitUV(vpW: number, vpH: number, imgAsp: number, eyeUv: number, xNudge = 0) {
-    const photoH = vpH * PHOTO_H_FRAC
-    const photoW = photoH * imgAsp
-    const sx = vpW / photoW
-    const sy = vpH / photoH
-    const ox = -(sx - 1) / 2 - xNudge * sx
-    const oy = eyeUv - TARGET_EYE_Y * sy
-    return { sx, sy, ox, oy }
-  }
+  const fitUV = heroFitUV
 
   // ── main display scene — flat ortho quad ──────────────────────────────────
   const mainScene = new THREE.Scene()
@@ -1155,25 +1145,29 @@ onMounted(() => {
             mask-image: linear-gradient(to bottom,
       rgba(0,0,0,0.97) 0%, rgba(0,0,0,0.94) 40%,
       rgba(0,0,0,0.6) 66%, rgba(0,0,0,0.24) 84%, rgba(0,0,0,0) 100%);
-    /* On desktop the name sits in the empty gutter beside the face, so the
-       0.22 veil is only a whisper of lift over the DotField. At phone width the
-       photo fills the viewport and the name lands directly on dark hair —
-       #0A0A0A on near-black made "SH" and "GO" unreadable.
-       Two changes, phone-only. z-index: the scrim ships at 5, below the photo
-       canvas at 10, so it has never veiled the photo at all — lift it between
-       the canvas and the .overlay (70) that carries the type. Then raise the
-       veil itself; the radial mask still feathers it so it never reads as a
-       panel, and backdrop-filter now has the photo to sample. */
+    /* The 0.72 veil + 5px blur was rescue work: the phone crop used to put
+       the name straight onto dark hair, where #0A0A0A on near-black made
+       "SH" and "GO" unreadable. The portrait-viewport cap in fitUV() moved
+       the hair clear of the type, so that weight now only has the DotField
+       under it — and at 0.72 it visibly bleached the dots into a pale
+       rectangle behind the lockup. Back down to a whisper of lift, matching
+       the desktop intent. z-index stays at 20 (between the photo canvas at
+       10 and the .overlay at 70) so it still has something to sample if a
+       very short viewport pushes the hair back up under the name. */
     z-index: 20;
-    background: rgba(255, 255, 255, 0.72);
-    -webkit-backdrop-filter: blur(5px) saturate(0.94);
-            backdrop-filter: blur(5px) saturate(0.94);
+    background: rgba(255, 255, 255, 0.3);
+    -webkit-backdrop-filter: blur(3px) saturate(0.97);
+            backdrop-filter: blur(3px) saturate(0.97);
   }
   .tagline-block { width: 100%; max-width: 100%; gap: 0.6rem; }
-  .tagline       { white-space: normal; font-size: 0.58rem; letter-spacing: 0.12em; line-height: 1.45; }
+  /* 0.58rem is 9.3px — under the phone legibility floor. The strapline is
+     the first line of copy on the site; it has to be readable, and at
+     0.66rem it still fits one line down to 360px at this tracking. */
+  .tagline       { white-space: normal; font-size: 0.66rem; letter-spacing: 0.11em; line-height: 1.45; }
   .hero-name     { font-size: clamp(2.2rem, 13vw, 4.4rem); max-width: 100%; }
 
   .scroll-cue { right: var(--gutter-x); bottom: calc(var(--gutter-y) * 0.9); }
+  .scroll-cue-label { font-size: 0.68rem; }
   .scroll-cue-track { height: 40px; }
 }
 </style>

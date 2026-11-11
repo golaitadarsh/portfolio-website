@@ -604,4 +604,23 @@ const showCard = (cat: 'corporate' | 'academic') =>
 }
 
 [data-hidden="true"] { display: none !important; }
+
+/* ── phone ──
+   .pmeta is a four-item baseline row — index, org, dates, type — with the
+   type pushed to the far right by margin-left:auto. At 0.62rem plus 0.18em
+   tracking those four strings measure wider than a 390px card, so flex
+   squeezed each cell below its content and the labels broke mid-phrase:
+   "AXIS / BANK", "FRAMEWORK / BUILD". Let the row wrap instead, and drop
+   the auto-margin that was forcing a four-column read in the first place —
+   wrapped, the type chip reads as part of the same list. */
+@media (max-width: 720px) {
+  .pcard .pmeta {
+    flex-wrap: wrap;
+    gap: 0.4rem 0.85rem;
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+  }
+  .pcard .ptype { margin-left: 0; }
+  .filters .count { font-size: 0.74rem; }
+}
 </style>

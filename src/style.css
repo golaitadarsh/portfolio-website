@@ -746,6 +746,21 @@ a, button, [role="button"], input, select, textarea, label, summary {
   .entry-when { text-align: left; }
 }
 
+/* ── phone legibility floor ──
+   The shared micro-labels are sized for desktop viewing distance. On a
+   handset 0.55–0.66rem (8.8–10.6px) drops under the ~11px floor and stops
+   reading. Font-size-only overrides so the desktop cascade is untouched;
+   tracking stays as authored (these are 0.1–0.24em lockups, and re-tracking
+   them would change their shape rather than just their size). */
+@media (max-width: 720px) {
+  .section-num       { font-size: 0.7rem; }
+  .tag               { font-size: 0.72rem; }
+  .slot .slot-kind   { font-size: 0.68rem; }
+  .slot .slot-aspect { font-size: 0.68rem; }
+  .page-foot .dir    { font-size: 0.7rem; }
+  .bullets li        { font-size: 0.95rem; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
