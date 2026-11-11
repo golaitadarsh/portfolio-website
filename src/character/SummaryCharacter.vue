@@ -799,4 +799,26 @@ onBeforeUnmount(() => {
   color: var(--accent, #d9f24f);
   border-color: var(--ink, #111);
 }
+
+/* ── touch ──
+   The em-based padding renders these at 56x26 — a pill a mouse hits every
+   time and a thumb misses regularly, and they sit in a wrapped row where
+   the neighbour is 7px away. Grow the box, not the type: the labels stay
+   the size the lockup was drawn at, and the extra height comes out of
+   padding so the pill shape is preserved.
+
+   Both conditions, not just `pointer: coarse`. Coarse is the honest test
+   for "a thumb will drive this", but it is also the one a desktop browser
+   emulating a phone reports wrong, so a narrow viewport gets the same
+   treatment — and any device narrow enough to be a phone should have
+   phone-sized controls regardless of what it claims about its pointer. */
+@media (pointer: coarse), (max-width: 720px) {
+  .sc-actions { gap: 0.55rem; }
+  .sc-btn {
+    min-height: 44px;
+    padding: 0 1.15em;
+    font-size: 0.72rem;
+  }
+  .sc-actions-hint { font-size: 0.7rem; }
+}
 </style>

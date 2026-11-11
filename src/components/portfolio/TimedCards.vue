@@ -1055,7 +1055,7 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
     position: absolute;
     top: 12px;
     left: 14px;
-    font: 500 0.62rem/1 var(--f-mono);
+    font: 500 0.7rem/1 var(--f-mono);
     letter-spacing: 0.18em;
     color: rgba(244, 244, 241, 0.85);
   }
@@ -1067,8 +1067,15 @@ onBeforeUnmount(() => { teardown?.(); teardown = null })
     padding: 1.1rem 1.1rem 1.3rem;
   }
   .tcm-body .tc-title { font-size: 1.06rem; }
-  .tcm-body .tc-meta { font-size: 0.58rem; }
-  .tcm-body .tc-role { font-size: 0.82rem; color: rgba(244,244,241,0.7); }
+  /* 0.58rem is 9.3px: this line carries the institution, the professor and
+     the date — the card's whole provenance — and it was the least readable
+     text on the page. Same for the tags and status chips below. */
+  .tcm-body .tc-meta { font-size: 0.68rem; }
+  .tcm-body .tc-role { font-size: 0.84rem; color: rgba(244,244,241,0.7); }
+  .tcm-body .tc-tag,
+  .tcm-body .tc-links a { font-size: 0.7rem; }
+  .tcm-body .tc-demo-tag,
+  .tcm-body .tc-live-badge { font-size: 0.68rem; }
   .tcm-body .tc-bullets {
     max-width: none;
     grid-template-columns: 1fr;

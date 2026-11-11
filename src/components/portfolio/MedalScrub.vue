@@ -274,4 +274,14 @@ onMounted(() => {
   color: rgba(255, 255, 255, 0.55);
   pointer-events: none;
 }
+
+/* ── phone legibility floor ──
+   .medal-tag is the only thing naming what the medal IS; at 9.6px over a
+   photo at 55% white it was the weakest caption on the page. The readout
+   is a frame counter — it reads as instrumentation, so it gets the size
+   but keeps its lower contrast. */
+@media (max-width: 720px) {
+  .medal-tag     { font-size: 0.68rem; letter-spacing: 0.16em; color: rgba(255, 255, 255, 0.72); }
+  .medal-readout { font-size: 0.66rem; letter-spacing: 0.14em; }
+}
 </style>
